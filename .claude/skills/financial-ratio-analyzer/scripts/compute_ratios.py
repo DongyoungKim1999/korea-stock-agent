@@ -66,16 +66,29 @@ def _to_float(value) -> float | None:
     return f if f == f else None  # NaN 제거
 
 
+def _amount_from(acc: dict, amount_key: str) -> float | None:
+    """DART는 분기보고서(11013/11012/11014)의 손익계산서 항목에 한해 thstrm_amount/frmtrm_amount
+    대신(또는 그와 별개로) thstrm_add_amount/frmtrm_add_amount(연초 누계)를 함께 내려준다 —
+    분기 단독 금액이 아니라 누계를 써야 YoY 성장률·회전율이 일관되므로 add_amount를 우선한다.
+    재무상태표 항목·사업보고서는 add_amount 필드 자체가 없어 자동으로 일반 필드로 폴백된다.
+    """
+    add_key = amount_key.replace("_amount", "_add_amount")
+    v = _to_float(acc.get(add_key))
+    if v is not None:
+        return v
+    return _to_float(acc.get(amount_key))
+
+
 def _find_amount(accounts: list[dict], field: str, amount_key: str) -> float | None:
     ids, names, sj_div = _ACCOUNT_MAP[field]
     for acc in accounts:
         if acc.get("sj_div") == sj_div and acc.get("account_id") in ids:
-            v = _to_float(acc.get(amount_key))
+            v = _amount_from(acc, amount_key)
             if v is not None:
                 return v
     for acc in accounts:
         if acc.get("sj_div") == sj_div and any(n in (acc.get("account_nm") or "") for n in names):
-            v = _to_float(acc.get(amount_key))
+            v = _amount_from(acc, amount_key)
             if v is not None:
                 return v
     return None
