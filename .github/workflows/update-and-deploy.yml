@@ -41,6 +41,16 @@ jobs:
       - name: 의존성 설치
         run: pip install -r requirements.txt
 
+      - name: (임시 진단) Secret 전달 여부 확인 — 값은 출력하지 않고 길이만 확인
+        env:
+          DART_API_KEY: ${{ secrets.DART_API_KEY }}
+          NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
+          NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
+        run: |
+          echo "DART_API_KEY 길이: ${#DART_API_KEY} (0이면 Secret이 전달되지 않은 것)"
+          echo "NAVER_CLIENT_ID 길이: ${#NAVER_CLIENT_ID}"
+          echo "NAVER_CLIENT_SECRET 길이: ${#NAVER_CLIENT_SECRET}"
+
       - name: 데이터 생성 (technical/fundamental/attention → web/data)
         env:
           DART_API_KEY: ${{ secrets.DART_API_KEY }}
