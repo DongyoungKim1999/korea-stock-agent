@@ -106,6 +106,22 @@ def _safe_div(a: float | None, b: float | None) -> float | None:
     return a / b
 
 
+def _relative_favorability(target_val: float | None, avg: float | None, higher_is_better: bool) -> float | None:
+    """1보다 크면 target이 유리하도록 정규화. 두 값이 모두 양수면 기존처럼 비율로 계산한다.
+
+    성장률처럼 음수가 나올 수 있는 지표는 비율로 계산하면 부호가 뒤집혀 오해를 부른다
+    (예: target +474%, 평균 -30%일 때 474/-30을 그대로 쓰면 target이 훨씬 나은데도 '불리'로
+    표시됨). 둘 중 하나라도 0 이하면 차이 기반으로 계산해 방향성을 올바르게 유지한다 — 두 값이
+    모두 양수인 기존 케이스(안정성·활동성 비율 등)는 계산식이 그대로라 결과가 바뀌지 않는다.
+    """
+    if target_val is None or avg in (None, 0):
+        return None
+    if avg > 0 and target_val > 0:
+        return (target_val / avg) if higher_is_better else (avg / target_val)
+    diff = (target_val - avg) if higher_is_better else (avg - target_val)
+    return 1 + diff / (abs(avg) + abs(target_val) + 1e-9)
+
+
 def extract_raw_amounts(accounts: list[dict]) -> dict:
     return {
         field: {"thstrm": _find_amount(accounts, field, "thstrm_amount"), "frmtrm": _find_amount(accounts, field, "frmtrm_amount")}
@@ -188,9 +204,7 @@ def analyze(target_path: str, peer_paths: list[str], comparison_basis: str | Non
             target_val = latest_ratios[key]
             peer_vals = [p["ratios"][key] for p in peers if p["ratios"][key] is not None]
             avg = sum(peer_vals) / len(peer_vals) if peer_vals else None
-            relative = None
-            if target_val is not None and avg not in (None, 0):
-                relative = (target_val / avg) if higher_is_better else (avg / target_val)
+            relative = _relative_favorability(target_val, avg, higher_is_better)
             out[key] = {
                 "description": desc,
                 "target": round(target_val, 4) if target_val is not None else None,
