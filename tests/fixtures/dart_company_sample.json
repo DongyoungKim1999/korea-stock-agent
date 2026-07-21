@@ -1,0 +1,13 @@
+{
+  "status": "000",
+  "message": "정상",
+  "corp_name": "테스트전자",
+  "corp_name_eng": "TEST ELECTRONICS CO,.LTD",
+  "stock_name": "테스트전자",
+  "stock_code": "999999",
+  "ceo_nm": "홍길동",
+  "corp_cls": "Y",
+  "induty_code": "26410",
+  "est_dt": "19800101",
+  "acc_mt": "12"
+}

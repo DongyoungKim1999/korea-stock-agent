@@ -1,0 +1,76 @@
+name: 데이터 갱신 및 GitHub Pages 배포
+
+on:
+  schedule:
+    # 평일 KST 09:00, 15:00 (=UTC 00:00, 06:00). 장 시작/장중 기준. 필요시 조정.
+    - cron: "0 0,6 * * 1-5"
+  workflow_dispatch: {}   # Actions 탭에서 수동 실행 가능
+  push:
+    branches: [main]
+    paths:
+      # web/data/**는 이 워크플로우 자신이 커밋하는 대상이라 제외 — 포함시키면 매 실행마다
+      # 스스로를 재트리거하는 무한루프가 될 수 있다(기본 GITHUB_TOKEN은 재트리거를 막아주지만
+      # 방어적으로 경로도 분리해둔다).
+      - "web/index.html"
+      - "web/css/**"
+      - "web/js/**"
+      - "automation/**"
+      - "common/**"
+      - ".claude/skills/**"
+      - ".github/workflows/update-and-deploy.yml"
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 의존성 설치
+        run: pip install -r requirements.txt
+
+      - name: 데이터 생성 (technical/fundamental/attention → web/data)
+        env:
+          DART_API_KEY: ${{ secrets.DART_API_KEY }}
+          NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
+          NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
+        run: python automation/generate_all.py
+        # 일부 종목/스캔 실패는 generate_all.py 내부에서 스킵+로그 처리되어 여기서 중단되지 않는다.
+        # 전 단계가 실패했을 때만 이 스텝이 실패로 표시된다(automation/generate_all.py 참조) —
+        # 그 경우에도 아래 커밋/배포는 계속 진행해 직전 성공분(git에 남아있는 web/data)이 계속 서빙되게 한다.
+        continue-on-error: true
+
+      - name: 생성 결과 확인
+        run: |
+          echo "=== web/data 내용 ==="
+          find web/data -type f | sort
+          if [ -f web/data/meta.json ]; then cat web/data/meta.json; fi
+
+      - name: 생성된 데이터 커밋 (변경 있을 때만)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add web/data
+          git diff --staged --quiet || git commit -m "chore: 대시보드 데이터 자동 갱신 $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          git push
+
+      - name: Pages 아티팩트 업로드
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: web
+
+      - name: GitHub Pages 배포
+        id: deployment
+        uses: actions/deploy-pages@v4

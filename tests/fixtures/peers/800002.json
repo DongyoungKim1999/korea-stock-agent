@@ -1,0 +1,101 @@
+{
+  "status": "ok",
+  "stock_code": "800002",
+  "corp_code": "00800002",
+  "corp_name": "피어전자B",
+  "induty_code": "26410",
+  "periods": [
+    {
+      "bsns_year": "2026",
+      "reprt_code": "11014",
+      "fs_div": "CFS",
+      "accounts": [
+        {
+          "account_id": "ifrs-full_Assets",
+          "account_nm": "자산총계",
+          "sj_div": "BS",
+          "thstrm_amount": "12500000000000",
+          "frmtrm_amount": "12500000000000"
+        },
+        {
+          "account_id": "ifrs-full_Liabilities",
+          "account_nm": "부채총계",
+          "sj_div": "BS",
+          "thstrm_amount": "5000000000000",
+          "frmtrm_amount": "5000000000000"
+        },
+        {
+          "account_id": "ifrs-full_Equity",
+          "account_nm": "자본총계",
+          "sj_div": "BS",
+          "thstrm_amount": "7500000000000",
+          "frmtrm_amount": "7500000000000"
+        },
+        {
+          "account_id": "ifrs-full_CurrentAssets",
+          "account_nm": "유동자산",
+          "sj_div": "BS",
+          "thstrm_amount": "5200000000000",
+          "frmtrm_amount": "5200000000000"
+        },
+        {
+          "account_id": "ifrs-full_CurrentLiabilities",
+          "account_nm": "유동부채",
+          "sj_div": "BS",
+          "thstrm_amount": "2600000000000",
+          "frmtrm_amount": "2600000000000"
+        },
+        {
+          "account_id": "ifrs-full_TradeAndOtherCurrentReceivables",
+          "account_nm": "매출채권",
+          "sj_div": "BS",
+          "thstrm_amount": "1450000000000",
+          "frmtrm_amount": "1450000000000"
+        },
+        {
+          "account_id": "ifrs-full_Inventories",
+          "account_nm": "재고자산",
+          "sj_div": "BS",
+          "thstrm_amount": "1100000000000",
+          "frmtrm_amount": "1100000000000"
+        },
+        {
+          "account_id": "ifrs-full_Revenue",
+          "account_nm": "매출액",
+          "sj_div": "IS",
+          "thstrm_amount": "7800000000000",
+          "frmtrm_amount": "7450000000000"
+        },
+        {
+          "account_id": "ifrs-full_CostOfSales",
+          "account_nm": "매출원가",
+          "sj_div": "IS",
+          "thstrm_amount": "5100000000000",
+          "frmtrm_amount": "4950000000000"
+        },
+        {
+          "account_id": "dart_OperatingIncomeLoss",
+          "account_nm": "영업이익",
+          "sj_div": "IS",
+          "thstrm_amount": "980000000000",
+          "frmtrm_amount": "890000000000"
+        },
+        {
+          "account_id": "ifrs-full_ProfitLoss",
+          "account_nm": "당기순이익",
+          "sj_div": "IS",
+          "thstrm_amount": "760000000000",
+          "frmtrm_amount": "690000000000"
+        },
+        {
+          "account_id": "ifrs-full_FinanceCosts",
+          "account_nm": "금융원가",
+          "sj_div": "IS",
+          "thstrm_amount": "40000000000",
+          "frmtrm_amount": "36000000000.0"
+        }
+      ]
+    }
+  ],
+  "warnings": []
+}
