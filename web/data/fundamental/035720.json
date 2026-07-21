@@ -1,0 +1,1 @@
+{"status": "error", "code": "035720", "name": "카카오", "reason": "DART_API_KEY 미설정 (.env 확인)"}

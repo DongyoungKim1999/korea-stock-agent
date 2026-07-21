@@ -1,0 +1,1 @@
+{"status": "error", "code": "105560", "name": "KB금융", "reason": "DART_API_KEY 미설정 (.env 확인)"}
