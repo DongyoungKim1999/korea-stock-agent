@@ -25,19 +25,25 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 
 MIN_PEER_SAMPLE = 5  # 설계서 A6
 
+# sj_div: 회사마다 손익계산서를 "IS"(별도) + "OCI"/기타 로 나눠 내거나, "CIS"(포괄손익계산서)
+# 하나로 통합해서 내는 경우가 섞여있다(실제 DART 응답으로 확인됨 — 예: 삼성전자는 IS로 분리해서
+# 내지만 SK하이닉스/KB금융/NAVER 등은 CIS 하나에 매출액·영업이익·순이익을 전부 담아 낸다).
+# 그래서 손익 계정은 sj_div를 "IS"만이 아니라 ("IS","CIS") 둘 다 허용해서 찾는다.
+_IS_DIVS = ("IS", "CIS")
+
 _ACCOUNT_MAP = {
-    "assets": (("ifrs-full_Assets",), ("자산총계",), "BS"),
-    "liabilities": (("ifrs-full_Liabilities",), ("부채총계",), "BS"),
-    "equity": (("ifrs-full_Equity", "ifrs-full_EquityAttributableToOwnersOfParent"), ("자본총계",), "BS"),
-    "current_assets": (("ifrs-full_CurrentAssets",), ("유동자산",), "BS"),
-    "current_liabilities": (("ifrs-full_CurrentLiabilities",), ("유동부채",), "BS"),
-    "revenue": (("ifrs-full_Revenue", "ifrs-full_RevenueFromContractsWithCustomers"), ("매출액", "영업수익"), "IS"),
-    "cogs": (("ifrs-full_CostOfSales",), ("매출원가",), "IS"),
-    "operating_income": (("dart_OperatingIncomeLoss",), ("영업이익",), "IS"),
-    "net_income": (("ifrs-full_ProfitLoss",), ("당기순이익", "분기순이익", "반기순이익"), "IS"),
-    "receivables": (("ifrs-full_TradeAndOtherCurrentReceivables", "ifrs-full_TradeAndOtherReceivables"), ("매출채권",), "BS"),
-    "inventory": (("ifrs-full_Inventories",), ("재고자산",), "BS"),
-    "finance_cost": (("ifrs-full_FinanceCosts",), ("금융원가", "이자비용"), "IS"),
+    "assets": (("ifrs-full_Assets",), ("자산총계",), ("BS",)),
+    "liabilities": (("ifrs-full_Liabilities",), ("부채총계",), ("BS",)),
+    "equity": (("ifrs-full_Equity", "ifrs-full_EquityAttributableToOwnersOfParent"), ("자본총계",), ("BS",)),
+    "current_assets": (("ifrs-full_CurrentAssets",), ("유동자산",), ("BS",)),
+    "current_liabilities": (("ifrs-full_CurrentLiabilities",), ("유동부채",), ("BS",)),
+    "revenue": (("ifrs-full_Revenue", "ifrs-full_RevenueFromContractsWithCustomers"), ("매출액", "영업수익"), _IS_DIVS),
+    "cogs": (("ifrs-full_CostOfSales",), ("매출원가",), _IS_DIVS),
+    "operating_income": (("dart_OperatingIncomeLoss",), ("영업이익",), _IS_DIVS),
+    "net_income": (("ifrs-full_ProfitLoss",), ("당기순이익", "분기순이익", "반기순이익"), _IS_DIVS),
+    "receivables": (("ifrs-full_TradeAndOtherCurrentReceivables", "ifrs-full_TradeAndOtherReceivables"), ("매출채권",), ("BS",)),
+    "inventory": (("ifrs-full_Inventories",), ("재고자산",), ("BS",)),
+    "finance_cost": (("ifrs-full_FinanceCosts",), ("금융원가", "이자비용"), _IS_DIVS),
 }
 
 # (지표, 높을수록 유리한지, 설명)
@@ -80,14 +86,14 @@ def _amount_from(acc: dict, amount_key: str) -> float | None:
 
 
 def _find_amount(accounts: list[dict], field: str, amount_key: str) -> float | None:
-    ids, names, sj_div = _ACCOUNT_MAP[field]
+    ids, names, sj_divs = _ACCOUNT_MAP[field]
     for acc in accounts:
-        if acc.get("sj_div") == sj_div and acc.get("account_id") in ids:
+        if acc.get("sj_div") in sj_divs and acc.get("account_id") in ids:
             v = _amount_from(acc, amount_key)
             if v is not None:
                 return v
     for acc in accounts:
-        if acc.get("sj_div") == sj_div and any(n in (acc.get("account_nm") or "") for n in names):
+        if acc.get("sj_div") in sj_divs and any(n in (acc.get("account_nm") or "") for n in names):
             v = _amount_from(acc, amount_key)
             if v is not None:
                 return v
