@@ -1,10 +1,9 @@
 {
-  "generated_at": "2026-07-22T19:39:49.433547+09:00",
+  "generated_at": "2026-07-22T21:48:14.824347+09:00",
   "steps_ok": {
     "company_index": true,
     "technical": true,
-    "fundamental": true,
-    "attention": true
+    "fundamental": true
   },
   "watchlist_count": 120
 }
