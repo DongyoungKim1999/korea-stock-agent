@@ -58,8 +58,12 @@ def get_ohlcv(code: str, trading_days: int = 120, end_date: str | None = None) -
     return df.tail(trading_days)
 
 
-@retry_with_backoff(max_retries=2)
+@retry_with_backoff(max_retries=0)
 def _fetch_market_cap_by_date(fromdate: str, todate: str, ticker: str) -> pd.DataFrame:
+    # GitHub Actions 환경에서 이 엔드포인트는 실제 배포 로그로 100% 실패가 확인됐다(개별종목
+    # OHLCV는 정상인데 이것만 막힘 — 다른 "전종목류" 엔드포인트와 같은 차단 패턴). 재시도해도
+    # 성공한 적이 없어 max_retries=0으로 두어 워치리스트 전체 기준 약 10분+ 낭비를 없앤다.
+    # 시가총액은 UI에도 크게 노출되지 않는 부가정보라 실패해도 영향이 적다(비치명적 warning 처리됨).
     df = stock.get_market_cap(fromdate, todate, ticker)
     if df is None or df.empty:
         raise ValueError(f"빈 응답: 시가총액 {ticker} {fromdate}~{todate}")
