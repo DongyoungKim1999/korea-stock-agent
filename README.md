@@ -68,6 +68,9 @@ Claude Code 에이전트(위 기능들)는 LLM이 매번 직접 판단하지만,
   추가하면 되살릴 수 있다 — 코드 참고)
 - `.github/workflows/update-and-deploy.yml`이 평일 하루 2회(KST 09:00/15:00) `automation/generate_all.py`를
   실행해 `web/data/*.json`을 갱신하고 Pages로 배포한다. 실제 배포 방법은 이 문서 하단 참고.
+  `web/*.html`·`css`·`js` 같은 순수 UI 변경 커밋은 데이터 재생성 없이 기존 `web/data`로 바로
+  재배포한다(전종목 재조회는 커밋당 15~30분이 걸려서 UI만 고칠 때는 건너뜀) — `automation/`,
+  `common/`, `.claude/skills/` 변경이나 정기 스케줄/수동 실행은 항상 재생성한다.
 
 ## GPT 연동 (선택 기능)
 
