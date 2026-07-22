@@ -29,14 +29,25 @@ MAX_PEERS = 15
 MIN_PEERS = 5
 
 
-def find_peers_via_pykrx(code: str, latest_date: str) -> tuple[list[str], str]:
-    """(피어 종목코드 목록, comparison_basis) 반환. pykrx 업종분류 자체를 못 구하면 ([], "unavailable")."""
+def fetch_sector_classifications(latest_date: str) -> dict:
+    """KOSPI/KOSDAQ 업종분류를 딱 한 번씩만 받아온다(종목별로 재호출하지 않음 — 이 한 번의
+    호출로 전종목 분류가 다 들어있다). 클라우드 IP에서 막히는 환경이면 빈 dict를 반환하고,
+    이후 모든 종목은 재호출 없이 바로 워치리스트 재활용 경로로 넘어간다."""
+    result = {}
     for market in ("KOSPI", "KOSDAQ"):
         try:
             df = stock.get_market_sector_classifications(latest_date, market)
+            if df is not None and not df.empty:
+                result[market] = df
         except Exception:
-            continue
-        if df is None or df.empty or code not in df.index:
+            pass
+    return result
+
+
+def find_peers_via_pykrx(code: str, sector_dfs: dict) -> tuple[list[str], str]:
+    """(피어 종목코드 목록, comparison_basis) 반환. sector_dfs는 main()에서 한 번만 받아온 캐시."""
+    for df in sector_dfs.values():
+        if code not in df.index:
             continue
 
         target_sector = df.loc[code, "업종명"]
@@ -61,7 +72,7 @@ def find_peers_via_watchlist(code: str, sector: str, fetched: dict[str, dict]) -
     return ok_codes[:MAX_PEERS], "market_average_fallback"
 
 
-def generate_one(entry: dict, latest_date: str, fetched: dict[str, dict], tmp_dir: Path) -> dict:
+def generate_one(entry: dict, sector_dfs: dict, fetched: dict[str, dict], tmp_dir: Path) -> dict:
     code, name = entry["code"], entry["name"]
 
     target = fetched[code]
@@ -71,7 +82,7 @@ def generate_one(entry: dict, latest_date: str, fetched: dict[str, dict], tmp_di
     target_path = tmp_dir / f"{code}_target.json"
     target_path.write_text(json.dumps(target, ensure_ascii=False, default=str), encoding="utf-8")
 
-    peer_codes, basis = find_peers_via_pykrx(code, latest_date)
+    peer_codes, basis = find_peers_via_pykrx(code, sector_dfs) if sector_dfs else ([], "unavailable")
     peer_paths = []
 
     if peer_codes:
@@ -137,11 +148,15 @@ def main() -> None:
             p = tmp_dir / f"{entry['code']}_target.json"
             p.write_text(json.dumps(fetched[entry["code"]], ensure_ascii=False, default=str), encoding="utf-8")
 
-        # 2단계: 종목별 비율 계산 (피어는 pykrx 우선, 실패 시 워치리스트 재활용)
+        # 2단계: 업종분류를 한 번만 받아오고(종목별 재호출 없음), 종목별 비율 계산
+        print("[fundamental] 업종분류 조회 중(KOSPI/KOSDAQ 각 1회)...", file=sys.stderr)
+        sector_dfs = fetch_sector_classifications(latest_date)
+        print(f"[fundamental] 업종분류 확보: {list(sector_dfs.keys()) or '없음(워치리스트 재활용으로 진행)'}", file=sys.stderr)
+
         for entry in WATCHLIST:
             print(f"[fundamental] {entry['code']} {entry['name']} 비율 계산 중...", file=sys.stderr)
             try:
-                result = generate_one(entry, latest_date, fetched, tmp_dir)
+                result = generate_one(entry, sector_dfs, fetched, tmp_dir)
             except Exception as exc:
                 result = {"status": "error", "code": entry["code"], "name": entry["name"], "reason": str(exc)}
 
