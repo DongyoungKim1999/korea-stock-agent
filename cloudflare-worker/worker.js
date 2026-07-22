@@ -20,6 +20,13 @@ const MAX_TOKENS = 500;
 const MAX_MESSAGES = 12; // 대화 기록이 너무 길어지는 것 방지(토큰 비용 관리)
 const MAX_MESSAGE_CHARS = 2000;
 
+// Cloudflare Worker가 OpenAI를 직접 호출하면 엣지 IP가 간헐적으로
+// "unsupported_country_region_territory"로 거부당하는 사례가 있어(실배포 테스트로 확인됨),
+// Cloudflare AI Gateway를 경유한다. dash.cloudflare.com → AI → AI Gateway에서 생성.
+const CF_ACCOUNT_ID = "6148ebede20f6e32cf8907ba23298817";
+const AI_GATEWAY_NAME = "korea-stock-agent";
+const OPENAI_ENDPOINT = `https://gateway.ai.cloudflare.com/v1/${CF_ACCOUNT_ID}/${AI_GATEWAY_NAME}/openai/chat/completions`;
+
 const SYSTEM_PROMPT = `당신은 한국 상장주식 투자 참고 정보를 제공하는 AI 어시스턴트입니다.
 사용자가 보고 있는 대시보드 데이터(기술적분석/기본적분석 점수 등)를 참고해 질문에 답하세요.
 반드시 지킬 것:
@@ -83,7 +90,7 @@ export default {
       ? `\n\n[현재 보고 있는 종목 데이터]\n${JSON.stringify(payload.stockContext).slice(0, 1500)}`
       : "";
 
-    const openaiRes = await fetch("https://api.openai.com/v1/chat/completions", {
+    const openaiRes = await fetch(OPENAI_ENDPOINT, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
