@@ -1,0 +1,6 @@
+name = "korea-stock-agent-gpt-proxy"
+main = "worker.js"
+compatibility_date = "2024-09-01"
+
+# OPENAI_API_KEY는 여기 적지 않는다 — 반드시 아래 명령으로 Secret으로만 등록:
+#   wrangler secret put OPENAI_API_KEY

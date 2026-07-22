@@ -61,21 +61,28 @@ function renderPriceChart(containerEl, rows) {
     rightPriceScale: { borderColor: PALETTE.grid },
     timeScale: { borderColor: PALETTE.grid, timeVisible: false },
     crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+    localization: {
+      // 원화는 소수 단위가 없으므로 정수 + 천단위 구분자로 표시 (기존엔 "259000.00"처럼 나왔음)
+      priceFormatter: (p) => Math.round(p).toLocaleString("ko-KR"),
+    },
   });
+
+  const krwPriceFormat = { type: "price", precision: 0, minMove: 1 };
 
   const candleSeries = chart.addCandlestickSeries({
     upColor: PALETTE.candleUp, downColor: PALETTE.candleDown,
     borderUpColor: PALETTE.candleUp, borderDownColor: PALETTE.candleDown,
     wickUpColor: PALETTE.candleUp, wickDownColor: PALETTE.candleDown,
+    priceFormat: krwPriceFormat,
   });
   candleSeries.setData(rows.map(r => ({ time: r.date, open: r.open, high: r.high, low: r.low, close: r.close })));
 
   // MA선은 양봉/음봉 색(빨강·파랑)과 겹치지 않는 색만 사용 — 캔들과 추세선을 한눈에 구분하기 위함
-  const ma5 = chart.addLineSeries({ color: PALETTE.series4, lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
+  const ma5 = chart.addLineSeries({ color: PALETTE.series4, lineWidth: 1, priceLineVisible: false, lastValueVisible: false, priceFormat: krwPriceFormat });
   ma5.setData(simpleMovingAverage(rows, 5));
-  const ma20 = chart.addLineSeries({ color: PALETTE.series7, lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
+  const ma20 = chart.addLineSeries({ color: PALETTE.series7, lineWidth: 1, priceLineVisible: false, lastValueVisible: false, priceFormat: krwPriceFormat });
   ma20.setData(simpleMovingAverage(rows, 20));
-  const ma60 = chart.addLineSeries({ color: PALETTE.series2, lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
+  const ma60 = chart.addLineSeries({ color: PALETTE.series2, lineWidth: 1, priceLineVisible: false, lastValueVisible: false, priceFormat: krwPriceFormat });
   ma60.setData(simpleMovingAverage(rows, 60));
 
   chart.timeScale().fitContent();
@@ -88,6 +95,10 @@ function renderPriceChart(containerEl, rows) {
 }
 
 let _radarChart = null;
+
+function clearRadar() {
+  if (_radarChart) { _radarChart.destroy(); _radarChart = null; }
+}
 
 function renderRadar(canvasEl, entries) {
   // entries: [{label, value(0~5)}]
@@ -109,7 +120,10 @@ function renderRadar(canvasEl, entries) {
       responsive: true,
       maintainAspectRatio: true,
       animation: { duration: 300 },
-      plugins: { legend: { display: false }, tooltip: { enabled: true } },
+      plugins: {
+        legend: { display: false },
+        tooltip: { enabled: true, callbacks: { label: (ctx) => ` ${ctx.parsed.r.toFixed(1)} / 5.0` } },
+      },
       scales: {
         r: {
           min: 0, max: 5, ticks: { display: false, stepSize: 1 },

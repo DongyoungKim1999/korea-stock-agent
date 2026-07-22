@@ -182,6 +182,7 @@ html, body {
 .result-item .r-title { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
 .result-item .r-meta { display: flex; gap: 8px; align-items: center; font-size: 11px; color: var(--text-muted); }
 .result-item .r-tag { background: rgba(57,135,229,.15); color: var(--series-1); padding: 1px 6px; border-radius: 4px; font-size: 10px; }
+.result-item .r-tag-muted { background: rgba(255,255,255,.06); color: var(--text-muted); }
 .result-item .r-score { margin-left: auto; font-weight: 700; }
 
 /* ---------- technical panel ---------- */
@@ -290,19 +291,33 @@ html, body {
   position: sticky;
   bottom: 0;
   display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 24px;
+  flex-direction: column;
   background: var(--bg-card);
   border-top: 1px solid var(--border);
   z-index: 20;
 }
+.assistant-row { display: flex; align-items: center; gap: 10px; padding: 12px 24px; }
 .assistant-label { font-size: 12.5px; font-weight: 600; display: flex; align-items: center; gap: 6px; white-space: nowrap; }
 .beta-tag { background: var(--series-1); color: #fff; font-size: 9px; padding: 1px 6px; border-radius: 4px; font-weight: 700; }
-.assistant-bar input {
+.assistant-row input {
   flex: 1; background: var(--bg-page); border: 1px solid var(--border-strong); border-radius: 999px;
   padding: 9px 16px; color: var(--text-primary); outline: none; font-family: var(--font); font-size: 13px;
 }
+
+.assistant-log {
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 14px 24px 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-bottom: 1px solid var(--border);
+}
+.assistant-msg { max-width: 72%; padding: 8px 12px; border-radius: 12px; font-size: 12.5px; line-height: 1.5; white-space: pre-wrap; }
+.assistant-msg.user { align-self: flex-end; background: var(--series-1); color: #fff; border-bottom-right-radius: 3px; }
+.assistant-msg.assistant { align-self: flex-start; background: var(--bg-card-alt); color: var(--text-primary); border: 1px solid var(--border); border-bottom-left-radius: 3px; }
+.assistant-msg.pending { color: var(--text-muted); font-style: italic; }
+.assistant-msg.error-msg { align-self: flex-start; background: rgba(229,72,77,.12); color: var(--critical); border: 1px solid rgba(229,72,77,.3); }
 .send-btn {
   background: var(--series-1); border: none; color: #fff; width: 34px; height: 34px; border-radius: 50%;
   cursor: pointer; flex-shrink: 0; font-size: 14px;

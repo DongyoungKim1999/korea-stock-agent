@@ -40,12 +40,15 @@ def main() -> None:
     signals = collect_signals.collect(screened["candidates"])
     signals_by_code = {r["code"]: r for r in signals["results"]}
 
-    ranked = ds.rank_attention_candidates(screened["candidates"], signals_by_code)
+    rankings = ds.build_attention_rankings(screened["candidates"], signals_by_code)
 
-    for row in ranked:
-        row["sparkline"] = [
-            day["rows"][row["code"]]["close"] for day in history["daily"] if row["code"] in day["rows"]
-        ]
+    def attach_sparkline(row: dict) -> None:
+        row["sparkline"] = [day["rows"][row["code"]]["close"] for day in history["daily"] if row["code"] in day["rows"]]
+
+    for row in rankings["overall"]:
+        attach_sparkline(row)
+    for row in rankings["by_search"]:
+        attach_sparkline(row)
 
     result = {
         "status": "ok",
@@ -53,12 +56,13 @@ def main() -> None:
         "scan_date": screened.get("date"),
         "scope": "ALL",
         "screened_candidate_count": screened.get("candidate_count"),
-        "ranked_stocks": ranked,
+        "ranked_stocks": rankings["overall"],  # 하위호환: 기존 "실시간 급상승" 탭
+        "rankings": rankings,  # {overall, by_search}
         "warnings": screened.get("warnings", []) + signals.get("warnings", []),
     }
     WEB_DATA_PATH.write_text(json.dumps(result, ensure_ascii=False, default=str), encoding="utf-8")
-    print(f"[attention] 완료: {len(ranked)}개 종목 순위화", file=sys.stderr)
-    print(json.dumps({"status": "ok", "ranked_count": len(ranked)}, ensure_ascii=False))
+    print(f"[attention] 완료: overall {len(rankings['overall'])}개, 검색급증 {len(rankings['by_search'])}개", file=sys.stderr)
+    print(json.dumps({"status": "ok", "ranked_count": len(rankings["overall"])}, ensure_ascii=False))
 
 
 if __name__ == "__main__":

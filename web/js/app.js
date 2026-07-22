@@ -3,13 +3,18 @@
 
 const state = {
   watchlist: [],
+  watchlistCodes: new Set(),
+  companyIndex: [],   // 코스피+코스닥 전체 검색 인덱스 (data/company_index.json)
   meta: null,
   attention: null,
   currentCode: null,
   currentRange: 90,
   techCache: {},
   fundCache: {},
+  lastRenderedItems: [],
 };
+
+const RESULT_LIST_CAP = 60;
 
 function humanizeWarnings(warnings) {
   // 스크립트 내부 함수명이 섞인 원본 로그성 문구를 일반 사용자에게 보여줄 문장으로 정리한다.
@@ -74,29 +79,46 @@ function renderFreshness() {
 
 // ---------- search / result list ----------
 
+function searchUniverse() {
+  // 검색은 전체 상장사 인덱스 대상. 아직 못 불러왔으면 워치리스트로 축소 동작.
+  if (state.companyIndex.length) return state.companyIndex;
+  return state.watchlist.map((w) => ({ ...w, has_detail: true }));
+}
+
 function renderResultList(items) {
+  state.lastRenderedItems = items;
   const list = document.getElementById("result-list");
   list.innerHTML = "";
   if (items.length === 0) {
     list.innerHTML = '<li class="panel-empty">일치하는 종목이 없습니다</li>';
     return;
   }
-  for (const item of items) {
+  const capped = items.slice(0, RESULT_LIST_CAP);
+  for (const item of capped) {
+    const hasDetail = item.has_detail !== false;
     const li = document.createElement("li");
     li.className = "result-item" + (item.code === state.currentCode ? " active" : "");
+    const tag = hasDetail
+      ? `<span class="r-tag">${item.sector || "상세분석 지원"}</span>`
+      : `<span class="r-tag r-tag-muted">상세분석 미지원</span>`;
     li.innerHTML = `
       <div class="r-title">${item.name} <span style="color:var(--text-muted);font-weight:400">${item.code}</span></div>
-      <div class="r-meta"><span class="r-tag">${item.sector || "종목"}</span></div>`;
+      <div class="r-meta">${tag}</div>`;
     li.onclick = () => selectStock(item.code);
     list.appendChild(li);
+  }
+  if (items.length > capped.length) {
+    const more = document.createElement("li");
+    more.className = "panel-empty";
+    more.textContent = `외 ${items.length - capped.length}개 더 있음 — 검색어를 구체적으로 입력하면 좁혀집니다`;
+    list.appendChild(more);
   }
 }
 
 function updateSearchSummary(filteredCount, query) {
   const summary = document.getElementById("search-summary");
-  summary.textContent = query
-    ? `검색 결과 "${query}" (${filteredCount})`
-    : `전체 워치리스트 (${state.watchlist.length})`;
+  const totalLabel = state.companyIndex.length ? `코스피·코스닥 전체 ${state.companyIndex.length}` : `워치리스트 ${state.watchlist.length}`;
+  summary.textContent = query ? `검색 결과 "${query}" (${filteredCount})` : `전체 종목 (${totalLabel})`;
 }
 
 function wireSearch() {
@@ -108,13 +130,16 @@ function wireSearch() {
       renderResultList(state.watchlist);
       return;
     }
-    const filtered = state.watchlist.filter(
+    const universe = searchUniverse();
+    const filtered = universe.filter(
       (s) => s.name.toLowerCase().includes(q) || s.code.includes(q) || (s.sector || "").toLowerCase().includes(q)
     );
+    // 상세분석 지원 종목을 검색결과 상단에 먼저 보여준다
+    filtered.sort((a, b) => (b.has_detail !== false) - (a.has_detail !== false));
     updateSearchSummary(filtered.length, input.value);
     renderResultList(filtered);
     if (filtered.length === 0) {
-      showToast("현재 상시분석 워치리스트(20종목)에 없는 종목입니다. 정확한 분석은 Claude Code 에이전트에게 직접 물어보세요.");
+      showToast("일치하는 상장사를 찾을 수 없습니다. 종목명이나 6자리 코드로 다시 검색해보세요.");
     }
   });
 }
@@ -165,11 +190,15 @@ function renderTechnical(data) {
   const warnEl = document.getElementById("tech-warning");
   if (!data || data.status !== "ok") {
     document.getElementById("tech-score-num").textContent = "-";
-    document.getElementById("tech-score-badge").textContent = "데이터 없음";
+    document.getElementById("tech-score-badge").textContent = data && data.status === "unsupported" ? "미지원 종목" : "데이터 없음";
     document.getElementById("tech-score-sub").textContent = "";
     renderGauge(3);
-    document.getElementById("price-chart").innerHTML = '<div class="panel-empty">기술적분석 데이터를 아직 생성하지 못했습니다</div>';
+    document.getElementById("price-chart").innerHTML =
+      data && data.status === "unsupported"
+        ? '<div class="panel-empty">이 종목은 상시분석 대상(시가총액 상위 우량주)이 아니라 상세분석을 제공하지 않습니다.<br>Claude Code 에이전트에게 직접 물어보시면 이 종목도 분석해 드립니다.</div>'
+        : '<div class="panel-empty">기술적분석 데이터를 아직 생성하지 못했습니다</div>';
     document.getElementById("indicator-table").innerHTML = "";
+    clearRadar();
     warnEl.textContent = data && data.reason ? `사유: ${data.reason}` : "";
     return;
   }
@@ -218,9 +247,10 @@ function renderFundamental(data) {
   const warnEl = document.getElementById("fund-warning");
   const ids = ["fund-stability", "fund-growth", "fund-activity"];
   if (!data || data.status !== "ok") {
-    ids.forEach((id) => (document.getElementById(id).textContent = "-"));
+    ids.forEach((id) => { document.getElementById(id).textContent = "-"; document.getElementById(id).style.color = ""; });
     document.getElementById("fin-table").innerHTML = "";
-    document.getElementById("fund-summary-list").innerHTML = "";
+    document.getElementById("fund-summary-list").innerHTML =
+      data && data.status === "unsupported" ? '<li>상세분석 미지원 종목입니다.</li>' : "";
     document.getElementById("fund-footnote").textContent = "";
     warnEl.textContent = data && data.reason ? `사유: ${data.reason}` : "";
     return;
@@ -265,7 +295,13 @@ function renderFundamental(data) {
 
 async function selectStock(code) {
   state.currentCode = code;
-  renderResultList(filteredWatchlist());
+  renderResultList(state.lastRenderedItems.length ? state.lastRenderedItems : state.watchlist);
+
+  if (!state.watchlistCodes.has(code)) {
+    renderTechnical({ status: "unsupported" });
+    renderFundamental({ status: "unsupported" });
+    return;
+  }
 
   try {
     if (!state.techCache[code]) state.techCache[code] = await loadJSON(`data/technical/${code}.json`);
@@ -282,12 +318,6 @@ async function selectStock(code) {
   }
 }
 
-function filteredWatchlist() {
-  const q = document.getElementById("search-input").value.trim().toLowerCase();
-  if (!q) return state.watchlist;
-  return state.watchlist.filter((s) => s.name.toLowerCase().includes(q) || s.code.includes(q));
-}
-
 function wireRangeTabs() {
   document.getElementById("range-tabs").addEventListener("click", (e) => {
     const btn = e.target.closest("button[data-range]");
@@ -301,6 +331,20 @@ function wireRangeTabs() {
 
 // ---------- attention panel ----------
 
+state.attentionTab = "overall";
+
+const ATTENTION_TAB_EMPTY_MSG = {
+  overall: "오늘은 통계적으로 뚜렷하게 주목할 만한 종목이 없습니다.",
+  by_search: "오늘은 검색량이 뚜렷하게 급증한 종목이 없습니다 (네이버 데이터랩 키 미설정일 수도 있습니다).",
+};
+
+function currentAttentionRanked() {
+  if (!state.attention || state.attention.status !== "ok") return [];
+  const rankings = state.attention.rankings;
+  if (rankings && rankings[state.attentionTab]) return rankings[state.attentionTab];
+  return state.attentionTab === "overall" ? state.attention.ranked_stocks || [] : [];
+}
+
 function renderAttentionList() {
   const list = document.getElementById("attention-list");
   const timeEl = document.getElementById("attention-time");
@@ -311,20 +355,23 @@ function renderAttentionList() {
     return;
   }
 
+  const ranked = currentAttentionRanked();
   const dt = new Date(state.attention.generated_at);
-  timeEl.textContent = `기준 시간: ${isNaN(dt) ? state.attention.generated_at : dt.toLocaleString("ko-KR", { hour12: false })} · 1차 스크리닝 통과 ${state.attention.screened_candidate_count}개 중 상위 ${state.attention.ranked_stocks.length}개`;
+  timeEl.textContent = `기준 시간: ${isNaN(dt) ? state.attention.generated_at : dt.toLocaleString("ko-KR", { hour12: false })} · 1차 스크리닝 통과 ${state.attention.screened_candidate_count}개 중 상위 ${ranked.length}개`;
 
-  if (state.attention.ranked_stocks.length === 0) {
-    list.innerHTML = '<li class="attention-empty">오늘은 통계적으로 뚜렷하게 주목할 만한 종목이 없습니다.</li>';
+  if (ranked.length === 0) {
+    list.innerHTML = `<li class="attention-empty">${ATTENTION_TAB_EMPTY_MSG[state.attentionTab] || "표시할 종목이 없습니다."}</li>`;
     return;
   }
 
   list.innerHTML = "";
-  state.attention.ranked_stocks.forEach((s) => {
+  ranked.forEach((s) => {
     const li = document.createElement("li");
     li.className = "attention-item";
     const changeCls = (s.today_change_pct ?? 0) >= 0 ? "pos" : "neg";
-    const displayScore = Math.max(0, Math.min(5, (s.composite_score / 11) * 5));
+    const scoreForDisplay = state.attentionTab === "by_search" ? s.search_component : s.composite_score;
+    const displayMax = state.attentionTab === "by_search" ? 3 : 11;
+    const displayScore = Math.max(0, Math.min(5, (scoreForDisplay / displayMax) * 5));
     li.innerHTML = `
       <div class="rank-badge">${s.rank}</div>
       <div class="a-main">
@@ -343,8 +390,19 @@ function renderAttentionList() {
   });
 }
 
+function wireAttentionTabs() {
+  document.getElementById("attention-tabs").addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-key]");
+    if (!btn) return;
+    document.querySelectorAll("#attention-tabs button").forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+    state.attentionTab = btn.dataset.key;
+    renderAttentionList();
+  });
+}
+
 function showAttentionDetail(s) {
-  const inWatchlist = state.watchlist.some((w) => w.code === s.code);
+  const inWatchlist = state.watchlistCodes.has(s.code);
   openModal(`
     <h3>${s.rank}. ${s.name || s.code} (${s.code})</h3>
     <p>${s.reason}</p>
@@ -361,33 +419,105 @@ function wireAttentionCriteria() {
     openModal(`
       <h3>추천 기준</h3>
       <p>① 전종목 거래량·등락률을 최근 20거래일 자기 자신의 평균과 비교(Z-score)해 상위 30~50개 후보를 뽑고,
-      ② 후보들의 네이버 검색량 급증·뉴스 언급·DART 공시 빈도를 추가로 확인한 뒤,
-      ③ 통계 이상탐지 점수(최대 4점) + 검색량(최대 3점) + 뉴스(최대 2.5점) + 공시(최대 1.5점)를
-      합산한 규칙 기반 점수로 순위를 매깁니다.</p>
+      ② 후보들의 네이버 검색량 급증·뉴스 언급·DART 공시 빈도를 추가로 확인합니다.</p>
+      <p><b>실시간 급상승</b> 탭: 통계 이상탐지 점수(최대 4점) + 검색량(최대 3점) + 뉴스(최대 2.5점) + 공시(최대 1.5점)를 합산한 점수로 순위화.<br>
+      <b>검색량 급증</b> 탭: 위 후보군 중 네이버 검색어트렌드 상승폭만으로 다시 순위화 — 시세는 아직 크게 안 움직였어도 관심이 몰리기 시작한 종목을 먼저 보고 싶을 때 사용.</p>
       <p style="color:var(--text-muted);font-size:11px;">대화형 Claude Code 에이전트(market-scanner)는 이 데이터를 LLM이 직접 종합판단하지만,
       이 자동 갱신 웹페이지는 무인 실행이라 규칙 기반 점수로 대체합니다.</p>
     `);
   };
 }
 
-// ---------- assistant bar (정적 사이트 — 실제 LLM 연결 없음) ----------
+// ---------- assistant bar ----------
+// GPT_WORKER_URL(js/config.js)이 비어있으면 안내 토스트만 표시(기존 동작 그대로).
+// 설정돼 있으면 cloudflare-worker를 통해 실제 GPT와 대화한다 — OpenAI 키는 이 페이지에 없다.
+
+state.chatHistory = [];
+
+function isGptConfigured() {
+  return typeof GPT_WORKER_URL === "string" && GPT_WORKER_URL.trim().length > 0;
+}
+
+function appendChatMessage(role, content, extraClass = "") {
+  const log = document.getElementById("assistant-log");
+  log.hidden = false;
+  const div = document.createElement("div");
+  div.className = `assistant-msg ${role} ${extraClass}`.trim();
+  div.textContent = content;
+  log.appendChild(div);
+  log.scrollTop = log.scrollHeight;
+  return div;
+}
+
+function currentStockContext() {
+  const code = state.currentCode;
+  if (!code || !state.watchlistCodes.has(code)) return null;
+  const tech = state.techCache[code];
+  const fund = state.fundCache[code];
+  return {
+    code,
+    name: (state.watchlist.find((w) => w.code === code) || {}).name,
+    technical_score: tech && tech.status === "ok" ? tech.score : null,
+    fundamental_scores: fund && fund.status === "ok"
+      ? { stability: fund.stability_score, growth: fund.growth_score, activity: fund.activity_score }
+      : null,
+  };
+}
+
+async function sendToGpt(userText) {
+  appendChatMessage("user", userText);
+  state.chatHistory.push({ role: "user", content: userText });
+  const pending = appendChatMessage("assistant", "생각 중...", "pending");
+
+  try {
+    const res = await fetch(GPT_WORKER_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages: state.chatHistory.slice(-12), stockContext: currentStockContext() }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `요청 실패 (${res.status})`);
+    pending.textContent = data.reply;
+    pending.className = "assistant-msg assistant";
+    state.chatHistory.push({ role: "assistant", content: data.reply });
+  } catch (err) {
+    pending.textContent = `연결 실패: ${err.message}`;
+    pending.className = "assistant-msg error-msg";
+  }
+}
 
 function wireAssistant() {
   const send = () => {
     const input = document.getElementById("assistant-input");
-    if (!input.value.trim()) return;
-    showToast("이 웹 대시보드는 자동 생성된 정적 요약입니다. 실제 AI와 대화하며 심층분석을 받으려면 이 프로젝트를 Claude Code로 열고 종목명을 말씀해주세요.", 5000);
+    const text = input.value.trim();
+    if (!text) return;
     input.value = "";
+    if (isGptConfigured()) {
+      sendToGpt(text);
+    } else {
+      showToast("GPT가 아직 연결되지 않았습니다. cloudflare-worker/README.md대로 배포 후 js/config.js에 주소를 넣으면 실제 대화가 가능합니다. 그 전까지는 Claude Code 에이전트에게 직접 물어보세요.", 5500);
+    }
   };
   document.getElementById("assistant-send").onclick = send;
   document.getElementById("assistant-input").addEventListener("keydown", (e) => { if (e.key === "Enter") send(); });
-  document.getElementById("assistant-reset").onclick = () => showToast("대화 내용이 없습니다.");
+  document.getElementById("assistant-reset").onclick = () => {
+    state.chatHistory = [];
+    const log = document.getElementById("assistant-log");
+    log.innerHTML = "";
+    log.hidden = true;
+    showToast("대화를 초기화했습니다.");
+  };
 }
 
 // ---------- init ----------
 
 async function init() {
   try { state.watchlist = await loadJSON("data/watchlist.json"); } catch (e) { state.watchlist = []; }
+  state.watchlistCodes = new Set(state.watchlist.map((w) => w.code));
+  try {
+    const idx = await loadJSON("data/company_index.json");
+    state.companyIndex = idx.status === "ok" ? idx.companies : [];
+  } catch (e) { state.companyIndex = []; }
   try { state.meta = await loadJSON("data/meta.json"); } catch (e) { state.meta = null; }
   renderFreshness();
 
@@ -401,6 +531,7 @@ async function init() {
   wireAssistant();
   wireModal();
   wireAttentionCriteria();
+  wireAttentionTabs();
 
   if (state.watchlist.length) selectStock(state.watchlist[0].code);
 }

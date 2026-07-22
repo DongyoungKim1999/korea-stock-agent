@@ -45,6 +45,7 @@ output/cache/      서브에이전트 결과(json) + API 원본 캐시(raw/, TTL
 tests/fixtures/    DART/네이버 API 실키 없이도 로직을 검증할 수 있는 합성 데이터
 automation/        GitHub Actions용 무인 데이터 생성 파이프라인 (아래 "웹 대시보드" 참고)
 web/               GitHub Pages로 배포되는 정적 대시보드 (HTML/CSS/JS + automation이 만든 데이터)
+cloudflare-worker/ AI 어시스턴트용 GPT 프록시 서버(선택 기능, 별도 배포 필요)
 ```
 
 ## 웹 대시보드 (GitHub Pages)
@@ -55,12 +56,32 @@ Claude Code 에이전트(위 기능들)는 LLM이 매번 직접 판단하지만,
 `automation/deterministic_scoring.py`에 코드로 그대로 구현해 대신 사용한다. 두 결과는 방향은
 비슷해도 서술적 뉘앙스까지 같지는 않다 — 대시보드에도 이 사실을 명시해 두었다.
 
-- **기술적/기본적분석**: API 호출량 관리를 위해 `automation/watchlist.py`의 20종목만 상시 갱신
-  (종목 추가는 이 파일만 수정하면 됨)
-- **종목 추천(주목종목)**: 원래 설계대로 시장 전체(코스피+코스닥)를 스캔하되, 최종 순위(B5)는
-  LLM 대신 규칙 기반 합산 점수로 대체
+- **검색**: 코스피+코스닥 전체 상장사(약 2,500개+) 대상. `automation/generate_company_index.py`가
+  DART corpCode 매핑을 재활용해 만든다(전종목 조회 차단과 무관한 경로)
+- **기술적/기본적 상세분석**: API 호출량·실행시간 관리를 위해 `automation/watchlist.py`에 큐레이션된
+  우량주 120종목만 지원. 검색 결과에서 이 목록 밖 종목을 선택하면 "상세분석 미지원"으로 안내되고,
+  기본 정보(종목명·코드)까지는 확인 가능. 종목 추가/제거는 watchlist.py만 수정하면 됨
+- **종목 추천**: "실시간 급상승"(통계 이상탐지+검색량+뉴스+공시 종합)과 "검색량 급증"(네이버
+  검색어트렌드 상승폭만으로 재정렬) 두 탭 제공. 원래 설계의 B5(LLM 종합판단)는 무인 환경이라
+  규칙 기반 합산 점수로 대체
+- **AI 어시스턴트**: 기본은 안내 메시지만 표시(정적 사이트라 LLM 연결 없음). `cloudflare-worker/`를
+  배포하면 실제 GPT와 대화 가능 — 아래 "GPT 연동" 절 참고
 - `.github/workflows/update-and-deploy.yml`이 평일 하루 2회(KST 09:00/15:00) `automation/generate_all.py`를
   실행해 `web/data/*.json`을 갱신하고 Pages로 배포한다. 실제 배포 방법은 이 문서 하단 참고.
+
+## GPT 연동 (선택 기능)
+
+AI 어시스턴트가 실제 GPT와 대화하게 하려면 별도 서버리스 프록시가 필요하다(OpenAI 키를
+공개 웹페이지에 직접 넣을 수 없기 때문 — DART/네이버 키와 같은 이유). 상세 배포 절차는
+[cloudflare-worker/README.md](cloudflare-worker/README.md) 참고. 요약:
+
+1. `cloudflare-worker/`에서 Cloudflare Worker 배포 (`wrangler deploy`), `OPENAI_API_KEY`는 Secret으로 등록
+2. 배포된 Worker 주소를 `web/js/config.js`의 `GPT_WORKER_URL`에 입력 후 커밋/푸시
+3. **OpenAI 계정에 월 지출 한도(Hard limit)를 반드시 설정** — Worker URL이 공개되므로 남용 시 비용
+   폭탄을 막는 최종 방어선
+
+설정 전까지는 어시스턴트가 "GPT가 아직 연결되지 않았습니다" 안내만 표시하며, 사이트의 다른
+기능에는 전혀 영향이 없다.
 
 **로컬 미리보기**:
 ```bash

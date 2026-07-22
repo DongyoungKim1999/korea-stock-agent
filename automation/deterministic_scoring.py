@@ -250,31 +250,50 @@ def _build_evidence_and_reason(candidate: dict, signals: dict) -> tuple[list[str
     return evidence, reason
 
 
-def rank_attention_candidates(candidates: list[dict], signals_by_code: dict[str, dict]) -> list[dict]:
+def _score_all_candidates(candidates: list[dict], signals_by_code: dict[str, dict]) -> list[dict]:
+    """후보 전체(30~50개)를 채점한다 — 상위 N 컷은 호출부에서 기준별로 따로 한다."""
     scored = []
     for cand in candidates:
         code = cand["code"]
         signals = signals_by_code.get(code, {})
-        composite = (
-            _clamp(cand.get("score", 0), 0, 10) / 10 * 4
-            + _search_component(signals.get("search_trend", {}))
-            + _news_component(signals.get("news", {}))
-            + _disclosure_component(signals.get("disclosures", {}))
-        )
+        stat = _clamp(cand.get("score", 0), 0, 10) / 10 * 4
+        search = _search_component(signals.get("search_trend", {}))
+        news = _news_component(signals.get("news", {}))
+        disclosure = _disclosure_component(signals.get("disclosures", {}))
         evidence, reason = _build_evidence_and_reason(cand, signals)
         scored.append(
             {
                 "code": code,
                 "name": cand.get("name") or signals.get("name"),
-                "composite_score": round(composite, 2),
+                "composite_score": round(stat + search + news + disclosure, 2),
+                "stat_component": round(stat, 2),
+                "search_component": round(search, 2),
+                "news_component": round(news, 2),
+                "disclosure_component": round(disclosure, 2),
                 "reason": reason,
                 "evidence": evidence,
                 "today_change_pct": cand.get("today_change_pct"),
                 "today_close": cand.get("today_close"),
             }
         )
+    return scored
 
-    scored.sort(key=lambda r: r["composite_score"], reverse=True)
-    for i, row in enumerate(scored[:TOP_N_ATTENTION], start=1):
+
+def _rank(scored: list[dict], key: str) -> list[dict]:
+    ranked = sorted((r for r in scored if r[key] > 0), key=lambda r: r[key], reverse=True)[:TOP_N_ATTENTION]
+    for i, row in enumerate(ranked, start=1):
+        row = dict(row)
         row["rank"] = i
-    return scored[:TOP_N_ATTENTION]
+        ranked[i - 1] = row
+    return ranked
+
+
+def build_attention_rankings(candidates: list[dict], signals_by_code: dict[str, dict]) -> dict:
+    """설계서 B5의 규칙기반 대체 — 여러 기준별 순위를 한 번에 만든다(추가 API 호출 없음, 이미
+    수집된 30~50개 후보 신호를 기준만 바꿔 재정렬).
+    """
+    scored = _score_all_candidates(candidates, signals_by_code)
+    return {
+        "overall": _rank(scored, "composite_score"),
+        "by_search": _rank(scored, "search_component"),
+    }

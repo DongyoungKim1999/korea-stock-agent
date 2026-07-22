@@ -33,8 +33,10 @@ def main() -> None:
     import generate_technical
     import generate_fundamental
     import generate_attention
+    import generate_company_index
 
     results = {
+        "company_index": run_step("전체 상장사 검색 인덱스 생성", generate_company_index.main),
         "technical": run_step("기술적분석 생성", generate_technical.main),
         "fundamental": run_step("기본적분석 생성", generate_fundamental.main),
         "attention": run_step("주목종목 스캔 생성", generate_attention.main),
