@@ -6,7 +6,6 @@ const state = {
   watchlistCodes: new Set(),
   companyIndex: [],   // 코스피+코스닥 전체 검색 인덱스 (data/company_index.json)
   meta: null,
-  attention: null,
   currentCode: null,
   currentRange: 90,
   techCache: {},
@@ -41,7 +40,7 @@ function showToast(msg, ms = 3200) {
   if (!el) {
     el = document.createElement("div");
     el.id = "toast";
-    el.style.cssText = "position:fixed;left:50%;bottom:78px;transform:translateX(-50%);background:#1c2436;border:1px solid rgba(255,255,255,.14);color:#f2f4f8;padding:10px 18px;border-radius:999px;font-size:12.5px;z-index:200;max-width:80vw;text-align:center;box-shadow:0 8px 24px rgba(0,0,0,.4);";
+    el.style.cssText = "position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#1c2436;border:1px solid rgba(255,255,255,.14);color:#f2f4f8;padding:10px 18px;border-radius:999px;font-size:12.5px;z-index:200;max-width:80vw;text-align:center;box-shadow:0 8px 24px rgba(0,0,0,.4);";
     document.body.appendChild(el);
   }
   el.textContent = msg;
@@ -329,106 +328,7 @@ function wireRangeTabs() {
   });
 }
 
-// ---------- attention panel ----------
-
-state.attentionTab = "overall";
-
-const ATTENTION_TAB_EMPTY_MSG = {
-  overall: "오늘은 통계적으로 뚜렷하게 주목할 만한 종목이 없습니다.",
-  by_search: "오늘은 검색량이 뚜렷하게 급증한 종목이 없습니다 (네이버 데이터랩 키 미설정일 수도 있습니다).",
-};
-
-function currentAttentionRanked() {
-  if (!state.attention || state.attention.status !== "ok") return [];
-  const rankings = state.attention.rankings;
-  if (rankings && rankings[state.attentionTab]) return rankings[state.attentionTab];
-  return state.attentionTab === "overall" ? state.attention.ranked_stocks || [] : [];
-}
-
-function renderAttentionList() {
-  const list = document.getElementById("attention-list");
-  const timeEl = document.getElementById("attention-time");
-
-  if (!state.attention || state.attention.status !== "ok") {
-    list.innerHTML = '<li class="attention-empty">주목종목 데이터를 아직 생성하지 못했습니다.<br>GitHub Actions 실행 후 표시됩니다.</li>';
-    timeEl.textContent = "기준 시간: -";
-    return;
-  }
-
-  const ranked = currentAttentionRanked();
-  const dt = new Date(state.attention.generated_at);
-  timeEl.textContent = `기준 시간: ${isNaN(dt) ? state.attention.generated_at : dt.toLocaleString("ko-KR", { hour12: false })} · 1차 스크리닝 통과 ${state.attention.screened_candidate_count}개 중 상위 ${ranked.length}개`;
-
-  if (ranked.length === 0) {
-    list.innerHTML = `<li class="attention-empty">${ATTENTION_TAB_EMPTY_MSG[state.attentionTab] || "표시할 종목이 없습니다."}</li>`;
-    return;
-  }
-
-  list.innerHTML = "";
-  ranked.forEach((s) => {
-    const li = document.createElement("li");
-    li.className = "attention-item";
-    const changeCls = (s.today_change_pct ?? 0) >= 0 ? "pos" : "neg";
-    const scoreForDisplay = state.attentionTab === "by_search" ? s.search_component : s.composite_score;
-    const displayMax = state.attentionTab === "by_search" ? 3 : 11;
-    const displayScore = Math.max(0, Math.min(5, (scoreForDisplay / displayMax) * 5));
-    li.innerHTML = `
-      <div class="rank-badge">${s.rank}</div>
-      <div class="a-main">
-        <div class="a-name">${s.name || s.code}</div>
-        <div class="a-code">${s.code}</div>
-      </div>
-      <canvas class="a-spark" width="54" height="24"></canvas>
-      <div class="a-price">
-        <div>${s.today_close != null ? Number(s.today_close).toLocaleString() : "-"}</div>
-        <div class="a-change ${changeCls}">${s.today_change_pct != null ? (s.today_change_pct >= 0 ? "+" : "") + s.today_change_pct + "%" : ""}</div>
-      </div>
-      <div class="a-score" style="color:${scoreStatusColor(displayScore)}">${displayScore.toFixed(1)}</div>`;
-    li.onclick = () => showAttentionDetail(s);
-    list.appendChild(li);
-    if (s.sparkline && s.sparkline.length > 1) renderSparkline(li.querySelector(".a-spark"), s.sparkline);
-  });
-}
-
-function wireAttentionTabs() {
-  document.getElementById("attention-tabs").addEventListener("click", (e) => {
-    const btn = e.target.closest("button[data-key]");
-    if (!btn) return;
-    document.querySelectorAll("#attention-tabs button").forEach((b) => b.classList.remove("active"));
-    btn.classList.add("active");
-    state.attentionTab = btn.dataset.key;
-    renderAttentionList();
-  });
-}
-
-function showAttentionDetail(s) {
-  const inWatchlist = state.watchlistCodes.has(s.code);
-  openModal(`
-    <h3>${s.rank}. ${s.name || s.code} (${s.code})</h3>
-    <p>${s.reason}</p>
-    <ul class="check-list">${(s.evidence || []).map((e) => `<li>${e}</li>`).join("")}</ul>
-    <p style="color:var(--text-muted);font-size:11px;margin-top:14px;">자동 생성된 요약이며 LLM 서술이 아닌 규칙 기반 근거입니다. 심층분석은 Claude Code 에이전트에게 "${s.name} 분석해줘"라고 요청하세요.</p>
-    ${inWatchlist ? `<button class="ghost-btn" id="goto-stock" style="margin-top:10px;">이 종목 상세분석 보기 →</button>` : ""}
-  `);
-  const gotoBtn = document.getElementById("goto-stock");
-  if (gotoBtn) gotoBtn.onclick = () => { document.getElementById("modal").hidden = true; selectStock(s.code); window.scrollTo({ top: 0, behavior: "smooth" }); };
-}
-
-function wireAttentionCriteria() {
-  document.getElementById("attention-criteria-btn").onclick = () => {
-    openModal(`
-      <h3>추천 기준</h3>
-      <p>① 전종목 거래량·등락률을 최근 20거래일 자기 자신의 평균과 비교(Z-score)해 상위 30~50개 후보를 뽑고,
-      ② 후보들의 네이버 검색량 급증·뉴스 언급·DART 공시 빈도를 추가로 확인합니다.</p>
-      <p><b>실시간 급상승</b> 탭: 통계 이상탐지 점수(최대 4점) + 검색량(최대 3점) + 뉴스(최대 2.5점) + 공시(최대 1.5점)를 합산한 점수로 순위화.<br>
-      <b>검색량 급증</b> 탭: 위 후보군 중 네이버 검색어트렌드 상승폭만으로 다시 순위화 — 시세는 아직 크게 안 움직였어도 관심이 몰리기 시작한 종목을 먼저 보고 싶을 때 사용.</p>
-      <p style="color:var(--text-muted);font-size:11px;">대화형 Claude Code 에이전트(market-scanner)는 이 데이터를 LLM이 직접 종합판단하지만,
-      이 자동 갱신 웹페이지는 무인 실행이라 규칙 기반 점수로 대체합니다.</p>
-    `);
-  };
-}
-
-// ---------- assistant bar ----------
+// ---------- AI 어시스턴트 (우측 컬럼 채팅 패널) ----------
 // GPT_WORKER_URL(js/config.js)이 비어있으면 안내 토스트만 표시(기존 동작 그대로).
 // 설정돼 있으면 cloudflare-worker를 통해 실제 GPT와 대화한다 — OpenAI 키는 이 페이지에 없다.
 
@@ -440,9 +340,10 @@ function isGptConfigured() {
 
 function appendChatMessage(role, content, extraClass = "") {
   const log = document.getElementById("assistant-log");
-  log.hidden = false;
+  const hint = document.getElementById("chat-empty-hint");
+  if (hint) hint.remove();
   const div = document.createElement("div");
-  div.className = `assistant-msg ${role} ${extraClass}`.trim();
+  div.className = `chat-msg ${role} ${extraClass}`.trim();
   div.textContent = content;
   log.appendChild(div);
   log.scrollTop = log.scrollHeight;
@@ -478,11 +379,11 @@ async function sendToGpt(userText) {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || `요청 실패 (${res.status})`);
     pending.textContent = data.reply;
-    pending.className = "assistant-msg assistant";
+    pending.className = "chat-msg assistant";
     state.chatHistory.push({ role: "assistant", content: data.reply });
   } catch (err) {
     pending.textContent = `연결 실패: ${err.message}`;
-    pending.className = "assistant-msg error-msg";
+    pending.className = "chat-msg error-msg";
   }
 }
 
@@ -503,8 +404,7 @@ function wireAssistant() {
   document.getElementById("assistant-reset").onclick = () => {
     state.chatHistory = [];
     const log = document.getElementById("assistant-log");
-    log.innerHTML = "";
-    log.hidden = true;
+    log.innerHTML = '<div class="chat-empty" id="chat-empty-hint">보고 있는 종목이나 분석 결과에 대해 궁금한 점을 물어보세요.</div>';
     showToast("대화를 초기화했습니다.");
   };
 }
@@ -521,17 +421,12 @@ async function init() {
   try { state.meta = await loadJSON("data/meta.json"); } catch (e) { state.meta = null; }
   renderFreshness();
 
-  try { state.attention = await loadJSON("data/attention.json"); } catch (e) { state.attention = null; }
-  renderAttentionList();
-
   updateSearchSummary(state.watchlist.length, "");
   renderResultList(state.watchlist);
   wireSearch();
   wireRangeTabs();
   wireAssistant();
   wireModal();
-  wireAttentionCriteria();
-  wireAttentionTabs();
 
   if (state.watchlist.length) selectStock(state.watchlist[0].code);
 }

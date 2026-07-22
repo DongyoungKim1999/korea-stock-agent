@@ -135,27 +135,3 @@ function renderRadar(canvasEl, entries) {
   });
 }
 
-function renderSparkline(canvasEl, closeValues) {
-  const rising = closeValues.length > 1 && closeValues[closeValues.length - 1] >= closeValues[0];
-  new Chart(canvasEl, {
-    type: "line",
-    data: {
-      labels: closeValues.map((_, i) => i),
-      datasets: [{
-        data: closeValues,
-        borderColor: rising ? PALETTE.good : PALETTE.critical,
-        borderWidth: 1.5,
-        pointRadius: 0,
-        tension: 0.25,
-        fill: false,
-      }],
-    },
-    options: {
-      responsive: false,
-      animation: false,
-      plugins: { legend: { display: false }, tooltip: { enabled: false } },
-      scales: { x: { display: false }, y: { display: false } },
-      elements: { line: { borderJoinStyle: "round" } },
-    },
-  });
-}

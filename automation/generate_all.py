@@ -32,14 +32,18 @@ def main() -> None:
 
     import generate_technical
     import generate_fundamental
-    import generate_attention
     import generate_company_index
+
+    # generate_attention(주목종목 스캔)은 웹 대시보드 UI에서 뺐으므로(2026-07 개편) 더 이상
+    # 호출하지 않는다 — 전종목 스캔은 시간이 오래 걸리고 KRX 차단으로 자주 실패했었다.
+    # 스크립트 자체는 그대로 남아있어 필요하면 아래 줄만 다시 추가하면 된다:
+    #   import generate_attention
+    #   "attention": run_step("주목종목 스캔 생성", generate_attention.main),
 
     results = {
         "company_index": run_step("전체 상장사 검색 인덱스 생성", generate_company_index.main),
         "technical": run_step("기술적분석 생성", generate_technical.main),
         "fundamental": run_step("기본적분석 생성", generate_fundamental.main),
-        "attention": run_step("주목종목 스캔 생성", generate_attention.main),
     }
 
     meta = {

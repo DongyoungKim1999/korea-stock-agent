@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>AI 투자 에이전트</title>
-<meta name="description" content="무료 공개 데이터 기반 한국주식 기술적·기본적분석 및 주목종목 스캔 대시보드" />
+<meta name="description" content="무료 공개 데이터 기반 한국주식 기술적·기본적분석 대시보드 + AI 어시스턴트" />
 <link rel="stylesheet" href="css/style.css" />
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
@@ -124,30 +124,21 @@
       <div class="data-warning" id="fund-warning"></div>
     </section>
 
-    <aside class="panel panel-attention" aria-label="종목 추천">
+    <aside class="panel panel-chat" aria-label="AI 투자 어시스턴트">
       <div class="panel-head">
-        <h2>종목 추천 <span class="info-dot" title="시세 이상탐지 + 검색량/뉴스/공시 신호를 규칙 기반으로 종합한 자동 순위(참고용)">ⓘ</span></h2>
-        <button class="ghost-btn small" id="attention-criteria-btn">추천 기준</button>
+        <h2>AI 투자 어시스턴트 <span class="beta-tag">Beta</span></h2>
+        <button class="ghost-btn small" id="assistant-reset" title="대화 초기화">↻ 초기화</button>
       </div>
-      <div class="attention-tabs" id="attention-tabs">
-        <button data-key="overall" class="active">실시간 급상승</button>
-        <button data-key="by_search">검색량 급증</button>
+      <div class="chat-log" id="assistant-log">
+        <div class="chat-empty" id="chat-empty-hint">보고 있는 종목이나 분석 결과에 대해 궁금한 점을 물어보세요.</div>
       </div>
-      <div class="attention-time" id="attention-time">기준 시간: -</div>
-      <ol class="attention-list" id="attention-list"></ol>
+      <div class="chat-input-row">
+        <input type="text" id="assistant-input" placeholder="메시지를 입력하세요..." />
+        <button class="send-btn" id="assistant-send" title="전송">➤</button>
+      </div>
     </aside>
 
   </main>
-
-  <footer class="assistant-bar" id="assistant-bar">
-    <div class="assistant-log" id="assistant-log" hidden></div>
-    <div class="assistant-row">
-      <div class="assistant-label">AI 투자 어시스턴트 <span class="beta-tag">Beta</span></div>
-      <button class="ghost-btn" id="assistant-reset" title="대화 초기화">↻</button>
-      <input type="text" id="assistant-input" placeholder="분석 결과에 대해 궁금한 점을 물어보세요..." />
-      <button class="send-btn" id="assistant-send" title="전송">➤</button>
-    </div>
-  </footer>
 
 </div>
 
