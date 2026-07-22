@@ -21,9 +21,9 @@ function humanizeWarnings(warnings) {
   const out = [];
   for (const w of warnings || []) {
     if (!w) continue;
-    let text = w;
-    if (/시가총액/.test(w)) text = "시가총액 정보는 이번 갱신에서 가져오지 못했습니다(참고용 부가정보라 분석에는 영향 없음).";
-    else if (/재시도\(\d+회?\)\s*소진|자동재시도/.test(w)) continue; // 내부 재시도 로그는 숨김
+    if (/시가총액/.test(w)) continue; // 참고용 부가정보라 UI에서는 숨김(분석에 영향 없음)
+    if (/재시도\(\d+회?\)\s*소진|자동재시도/.test(w)) continue; // 내부 재시도 로그는 숨김
+    const text = w;
     if (!seen.has(text)) { seen.add(text); out.push(text); }
   }
   return out.join(" · ");
@@ -71,7 +71,7 @@ function renderFreshness() {
   const dt = new Date(state.meta.generated_at);
   const stamp = isNaN(dt) ? state.meta.generated_at : dt.toLocaleString("ko-KR", { hour12: false });
   const failed = Object.entries(state.meta.steps_ok || {}).filter(([, ok]) => !ok).map(([k]) => k);
-  let text = `데이터 기준: ${stamp} · 워치리스트 ${state.meta.watchlist_count}종목 자동 갱신 (결정론적 채점 — 대화형 에이전트의 LLM 판단과는 별개입니다)`;
+  let text = `데이터 기준: ${stamp} · 워치리스트 ${state.meta.watchlist_count}종목 자동 갱신`;
   if (failed.length) text += ` · ⚠ 일부 갱신 실패: ${failed.join(", ")}`;
   bar.textContent = text;
 }
