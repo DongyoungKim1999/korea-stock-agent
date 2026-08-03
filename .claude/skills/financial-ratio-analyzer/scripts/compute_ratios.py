@@ -227,51 +227,84 @@ def _piotroski_f_score(t: dict, f: dict) -> dict:
     }
 
 
-def compute_quality_valuation(latest_accounts: list[dict], reprt_code: str | None, latest_close: float | None) -> dict:
+_REPRT_ANNUAL = "11011"
+
+
+def _ttm_net_income(periods: list[dict], ni_cum: float | None, ni_cum_prev: float | None, reprt_code: str | None):
+    """최근 12개월(TTM) 순이익을 계산한다 — 단일 분기 ×N 연환산의 경기민감주 왜곡을 피하기 위함.
+
+    반환: (ttm_net_income, basis). basis는 "ttm"(정석) / "annual"(최신이 사업보고서) /
+    "annualized_quarter"(직전 연간보고서를 못 구해 부득이 분기 연환산) 중 하나.
+
+    TTM = 최근분기누계 + 직전 연간 − 전년동기누계. 세 값 모두 이미 받아온 4개 분기 안에 있다
+    (전년동기누계는 DART가 각 계정에 함께 주는 frmtrm값). 예) 지금이 1분기면
+    TTM = 1Q(당해) + 전년 연간 − 1Q(전년).
+    """
+    if reprt_code == _REPRT_ANNUAL:
+        return ni_cum, "annual"
+    prior_annual_ni = None
+    for p in periods[1:]:
+        if p.get("reprt_code") == _REPRT_ANNUAL:
+            prior_annual_ni = _find_amount(p.get("accounts", []), "net_income", "thstrm_amount")
+            break
+    if prior_annual_ni is not None and ni_cum is not None and ni_cum_prev is not None:
+        return ni_cum + prior_annual_ni - ni_cum_prev, "ttm"
+    factor = _ANNUALIZE_FACTOR.get(reprt_code or "", 1.0)
+    return (ni_cum * factor if ni_cum is not None else None), "annualized_quarter"
+
+
+def compute_quality_valuation(periods: list[dict], latest_close: float | None) -> dict:
     """퀄리티(ROE/ROA/F-Score)와 밸류에이션(PER/PBR)을 계산한다.
 
-    밸류에이션은 발행주식수를 DART가 내려주는 EPS로 역산한다(주식수 = 순이익 ÷ EPS, 누계기준이라
-    연환산 계수가 약분됨) — KRX 시가총액 엔드포인트가 클라우드 IP에서 차단돼도 종가+재무제표만으로
+    ROE/ROA/PER의 이익 기준은 단일 분기 연환산이 아니라 TTM(최근 12개월)을 우선 사용한다 —
+    경기민감주의 호황/불황 분기를 ×N 하면 크게 왜곡되기 때문(예: 반도체 호황 1분기 ×4 → ROE 98%).
+
+    밸류에이션은 발행주식수를 DART가 내려주는 EPS로 역산한다(주식수 = 순이익 ÷ EPS, 같은 기간
+    누계라 계수가 약분됨) — KRX 시가총액 엔드포인트가 클라우드 IP에서 차단돼도 종가+재무제표만으로
     PER/PBR을 낼 수 있게 한 우회다. EPS가 없거나 0이면 밸류에이션은 unavailable로 둔다.
     """
-    raw = extract_raw_amounts(latest_accounts)
+    latest = periods[0]
+    reprt_code = latest.get("reprt_code")
+    raw = extract_raw_amounts(latest["accounts"])
     t = {k: v["thstrm"] for k, v in raw.items()}
     f = {k: v["frmtrm"] for k, v in raw.items()}
-    factor = _ANNUALIZE_FACTOR.get(reprt_code or "", 1.0)
 
-    net_income = t.get("net_income")
+    ni_cum = t.get("net_income")           # 당해 누계 순이익
+    ni_cum_prev = f.get("net_income")       # 전년동기 누계 순이익
     equity = t.get("equity")
     assets = t.get("assets")
-    ni_annual = net_income * factor if net_income is not None else None
 
-    roe = _safe_div(ni_annual, equity)
-    roa = _safe_div(ni_annual, assets)
+    ni_ttm, earnings_basis = _ttm_net_income(periods, ni_cum, ni_cum_prev, reprt_code)
+
+    roe = _safe_div(ni_ttm, equity)
+    roa = _safe_div(ni_ttm, assets)
 
     quality = {
         "roe_pct": round(roe * 100, 2) if roe is not None else None,
         "roa_pct": round(roa * 100, 2) if roa is not None else None,
         "f_score": _piotroski_f_score(t, f),
-        "annualized": factor != 1.0,
+        "earnings_basis": earnings_basis,  # ttm / annual / annualized_quarter
     }
 
-    # 밸류에이션: EPS로 주식수 역산 → PER/PBR
-    valuation = {"per": None, "pbr": None, "shares_estimated": None, "eps_annualized": None, "basis": "unavailable"}
+    # 밸류에이션: EPS로 주식수 역산 → PER(TTM)/PBR
+    valuation = {"per": None, "pbr": None, "shares_estimated": None, "eps_ttm": None, "basis": "unavailable"}
     eps_cum = t.get("eps")
-    if latest_close is not None and eps_cum not in (None, 0) and net_income not in (None, 0):
-        shares = net_income / eps_cum  # 누계 순이익 ÷ 누계 EPS (연환산 계수 약분)
+    if latest_close is not None and eps_cum not in (None, 0) and ni_cum not in (None, 0):
+        shares = ni_cum / eps_cum  # 같은 기간 누계 순이익 ÷ 누계 EPS → 발행주식수
         if shares and shares > 0:
-            eps_annual = ni_annual / shares if ni_annual is not None else None
-            per = _safe_div(latest_close, eps_annual)
+            eps_ttm = ni_ttm / shares if ni_ttm is not None else None
+            per = _safe_div(latest_close, eps_ttm)
             bps = _safe_div(equity, shares)
             pbr = _safe_div(latest_close, bps)
             valuation = {
                 "per": round(per, 2) if per is not None else None,
                 "pbr": round(pbr, 2) if pbr is not None else None,
                 "shares_estimated": int(shares),
-                "eps_annualized": round(eps_annual, 1) if eps_annual is not None else None,
+                "eps_ttm": round(eps_ttm, 1) if eps_ttm is not None else None,
                 "bps": round(bps, 1) if bps is not None else None,
                 "latest_close": latest_close,
-                "basis": "eps_derived",  # 종가 + DART EPS 역산 기준(연환산). 시장 공표 PER과 소수 오차 가능
+                "earnings_basis": earnings_basis,
+                "basis": "eps_derived",  # 종가 + DART EPS 역산 기준. 시장 공표 PER과 소수 오차 가능
             }
     return {"quality": quality, "valuation": valuation}
 
@@ -288,7 +321,7 @@ def analyze(target_path: str, peer_paths: list[str], comparison_basis: str | Non
     target_periods = target["periods"]
     latest = target_periods[0]
     latest_ratios = compute_period_ratios(latest["accounts"])
-    quality_valuation = compute_quality_valuation(latest["accounts"], latest.get("reprt_code"), latest_close)
+    quality_valuation = compute_quality_valuation(target_periods, latest_close)
     trend = [
         {"bsns_year": p["bsns_year"], "reprt_code": p["reprt_code"], **{k: compute_period_ratios(p["accounts"])[k] for k in GROWTH_KEYS}}
         for p in target_periods
