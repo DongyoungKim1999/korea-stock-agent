@@ -44,7 +44,15 @@ _ACCOUNT_MAP = {
     "receivables": (("ifrs-full_TradeAndOtherCurrentReceivables", "ifrs-full_TradeAndOtherReceivables"), ("매출채권",), ("BS",)),
     "inventory": (("ifrs-full_Inventories",), ("재고자산",), ("BS",)),
     "finance_cost": (("ifrs-full_FinanceCosts",), ("금융원가", "이자비용"), _IS_DIVS),
+    # 아래 3개는 퀄리티(F-Score/ROE) & 밸류에이션(PER/PBR) 계산용으로 추가.
+    # 영업활동현금흐름은 현금흐름표(sj_div="CF")에 있다 — DART fnlttSinglAcntAll가 이미 함께 내려준다.
+    "operating_cash_flow": (("ifrs-full_CashFlowsFromUsedInOperatingActivities",), ("영업활동현금흐름", "영업활동으로인한현금흐름"), ("CF",)),
+    "issued_capital": (("ifrs-full_IssuedCapital",), ("자본금",), ("BS",)),  # 신주발행(희석) 판별용
+    "eps": (("ifrs-full_BasicEarningsLossPerShare", "dart_BasicEarningsLossPerShareChanged"), ("기본주당이익", "기본주당순이익", "주당순이익"), _IS_DIVS),
 }
+
+# 보고서코드별 연환산 계수 (분기 누계 → 연간). 1분기 ×4, 반기 ×2, 3분기 ×4/3, 사업보고서 ×1.
+_ANNUALIZE_FACTOR = {"11013": 4.0, "11012": 2.0, "11014": 4.0 / 3.0, "11011": 1.0}
 
 # (지표, 높을수록 유리한지, 설명)
 RATIO_META = {
@@ -151,11 +159,128 @@ def compute_period_ratios(accounts: list[dict]) -> dict:
     }
 
 
+def _piotroski_f_score(t: dict, f: dict) -> dict:
+    """Piotroski F-Score (Joseph Piotroski, 2000, J. of Accounting Research).
+
+    재무제표 9개 항목을 각각 통과(1)/미달(0)로 채점해 재무건전성을 0~9로 요약한다. 학술적으로
+    저PBR 종목 중 F-Score 높은 그룹이 낮은 그룹을 유의하게 아웃퍼폼함이 검증된, 대표적인 퀄리티
+    스크리닝 지표다. t=당기, f=전기(전년동기) raw 금액. 계산에 필요한 값이 없는 항목은 채점에서
+    제외하고(분모를 실채점 항목 수로), 몇 개 항목으로 매겼는지 max_score로 함께 노출한다.
+
+    한계 표기: 5번(레버리지)은 정통 정의(장기부채/평균자산)를 총부채/자산으로 근사했고, 7번(신주발행)은
+    발행주식수 대신 자본금(액면) 증감으로 근사했다 — 무료 데이터 제약상 합리적 대체이며 방향성은 보존된다.
+    """
+    checks: dict[str, bool | None] = {}
+
+    def roa(d):
+        return _safe_div(d.get("net_income"), d.get("assets"))
+
+    def leverage(d):
+        return _safe_div(d.get("liabilities"), d.get("assets"))
+
+    def current_ratio(d):
+        return _safe_div(d.get("current_assets"), d.get("current_liabilities"))
+
+    def gross_margin(d):
+        rev = d.get("revenue")
+        if rev in (None, 0) or d.get("cogs") is None:
+            return None
+        return (rev - d["cogs"]) / rev
+
+    def asset_turnover(d):
+        return _safe_div(d.get("revenue"), d.get("assets"))
+
+    roa_t, roa_f = roa(t), roa(f)
+    cfo_t = t.get("operating_cash_flow")
+    ni_t = t.get("net_income")
+
+    # 수익성 4
+    checks["roa_positive"] = (roa_t > 0) if roa_t is not None else None
+    checks["cfo_positive"] = (cfo_t > 0) if cfo_t is not None else None
+    checks["roa_improving"] = (roa_t > roa_f) if (roa_t is not None and roa_f is not None) else None
+    checks["accrual"] = (cfo_t > ni_t) if (cfo_t is not None and ni_t is not None) else None  # 이익의 질: 영업현금 > 순이익
+    # 레버리지/유동성 3
+    lev_t, lev_f = leverage(t), leverage(f)
+    checks["leverage_down"] = (lev_t < lev_f) if (lev_t is not None and lev_f is not None) else None
+    cr_t, cr_f = current_ratio(t), current_ratio(f)
+    checks["current_ratio_up"] = (cr_t > cr_f) if (cr_t is not None and cr_f is not None) else None
+    cap_t, cap_f = t.get("issued_capital"), f.get("issued_capital")
+    checks["no_dilution"] = (cap_t <= cap_f) if (cap_t is not None and cap_f is not None) else None
+    # 효율성 2
+    gm_t, gm_f = gross_margin(t), gross_margin(f)
+    checks["gross_margin_up"] = (gm_t > gm_f) if (gm_t is not None and gm_f is not None) else None
+    at_t, at_f = asset_turnover(t), asset_turnover(f)
+    checks["asset_turnover_up"] = (at_t > at_f) if (at_t is not None and at_f is not None) else None
+
+    scored = [v for v in checks.values() if v is not None]
+    score = sum(1 for v in scored if v)
+    max_score = len(scored)
+    return {
+        "score": score,
+        "max_score": max_score,
+        "checks": checks,
+        "interpretation": (
+            "우량(재무개선 뚜렷)" if max_score and score / max_score >= 7 / 9
+            else "보통" if max_score and score / max_score >= 4 / 9
+            else "취약(재무악화 신호)" if max_score else "산출불가"
+        ),
+    }
+
+
+def compute_quality_valuation(latest_accounts: list[dict], reprt_code: str | None, latest_close: float | None) -> dict:
+    """퀄리티(ROE/ROA/F-Score)와 밸류에이션(PER/PBR)을 계산한다.
+
+    밸류에이션은 발행주식수를 DART가 내려주는 EPS로 역산한다(주식수 = 순이익 ÷ EPS, 누계기준이라
+    연환산 계수가 약분됨) — KRX 시가총액 엔드포인트가 클라우드 IP에서 차단돼도 종가+재무제표만으로
+    PER/PBR을 낼 수 있게 한 우회다. EPS가 없거나 0이면 밸류에이션은 unavailable로 둔다.
+    """
+    raw = extract_raw_amounts(latest_accounts)
+    t = {k: v["thstrm"] for k, v in raw.items()}
+    f = {k: v["frmtrm"] for k, v in raw.items()}
+    factor = _ANNUALIZE_FACTOR.get(reprt_code or "", 1.0)
+
+    net_income = t.get("net_income")
+    equity = t.get("equity")
+    assets = t.get("assets")
+    ni_annual = net_income * factor if net_income is not None else None
+
+    roe = _safe_div(ni_annual, equity)
+    roa = _safe_div(ni_annual, assets)
+
+    quality = {
+        "roe_pct": round(roe * 100, 2) if roe is not None else None,
+        "roa_pct": round(roa * 100, 2) if roa is not None else None,
+        "f_score": _piotroski_f_score(t, f),
+        "annualized": factor != 1.0,
+    }
+
+    # 밸류에이션: EPS로 주식수 역산 → PER/PBR
+    valuation = {"per": None, "pbr": None, "shares_estimated": None, "eps_annualized": None, "basis": "unavailable"}
+    eps_cum = t.get("eps")
+    if latest_close is not None and eps_cum not in (None, 0) and net_income not in (None, 0):
+        shares = net_income / eps_cum  # 누계 순이익 ÷ 누계 EPS (연환산 계수 약분)
+        if shares and shares > 0:
+            eps_annual = ni_annual / shares if ni_annual is not None else None
+            per = _safe_div(latest_close, eps_annual)
+            bps = _safe_div(equity, shares)
+            pbr = _safe_div(latest_close, bps)
+            valuation = {
+                "per": round(per, 2) if per is not None else None,
+                "pbr": round(pbr, 2) if pbr is not None else None,
+                "shares_estimated": int(shares),
+                "eps_annualized": round(eps_annual, 1) if eps_annual is not None else None,
+                "bps": round(bps, 1) if bps is not None else None,
+                "latest_close": latest_close,
+                "basis": "eps_derived",  # 종가 + DART EPS 역산 기준(연환산). 시장 공표 PER과 소수 오차 가능
+            }
+    return {"quality": quality, "valuation": valuation}
+
+
 def _load(path: str) -> dict:
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
 
-def analyze(target_path: str, peer_paths: list[str], comparison_basis: str | None) -> dict:
+def analyze(target_path: str, peer_paths: list[str], comparison_basis: str | None, latest_close: float | None = None) -> dict:
     target = _load(target_path)
     if target.get("status") != "ok" or not target.get("periods"):
         return {"status": "error", "reason": "target 재무데이터가 유효하지 않습니다: " + str(target.get("reason", "periods 없음"))}
@@ -163,6 +288,7 @@ def analyze(target_path: str, peer_paths: list[str], comparison_basis: str | Non
     target_periods = target["periods"]
     latest = target_periods[0]
     latest_ratios = compute_period_ratios(latest["accounts"])
+    quality_valuation = compute_quality_valuation(latest["accounts"], latest.get("reprt_code"), latest_close)
     trend = [
         {"bsns_year": p["bsns_year"], "reprt_code": p["reprt_code"], **{k: compute_period_ratios(p["accounts"])[k] for k in GROWTH_KEYS}}
         for p in target_periods
@@ -226,6 +352,8 @@ def analyze(target_path: str, peer_paths: list[str], comparison_basis: str | Non
         "stability": category(STABILITY_KEYS),
         "growth": category(GROWTH_KEYS),
         "activity": category(ACTIVITY_KEYS),
+        "quality": quality_valuation["quality"],
+        "valuation": quality_valuation["valuation"],
         "growth_trend_by_period": trend,
         "warnings": warnings,
     }
@@ -236,10 +364,11 @@ def main() -> None:
     parser.add_argument("--target", required=True)
     parser.add_argument("--peer", action="append", default=[], dest="peers")
     parser.add_argument("--comparison-basis", choices=["industry_average", "market_average_fallback"])
+    parser.add_argument("--latest-close", type=float, help="밸류에이션(PER/PBR) 계산용 최근 종가 (없으면 밸류에이션 생략)")
     parser.add_argument("--out")
     args = parser.parse_args()
 
-    result = analyze(args.target, args.peers, args.comparison_basis)
+    result = analyze(args.target, args.peers, args.comparison_basis, args.latest_close)
     text = json.dumps(result, ensure_ascii=False, indent=2)
     print(text)
     if args.out:

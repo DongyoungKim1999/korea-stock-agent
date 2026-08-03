@@ -82,6 +82,28 @@
           <div class="radar-wrap"><canvas id="indicator-radar"></canvas></div>
         </div>
       </div>
+
+      <div class="risk-block" id="risk-block">
+        <h3 class="section-sub-title">리스크 지표 <span class="info-dot" title="가격 데이터로 산출한 변동성·낙폭. 점수가 아니라 '얼마나 출렁이고 물리면 얼마나 깨지는지'를 보는 참고 수치입니다.">ⓘ</span></h3>
+        <div class="risk-tiles">
+          <div class="risk-tile">
+            <div class="risk-tile-label">연 변동성</div>
+            <div class="risk-tile-value" id="risk-vol">-</div>
+            <div class="risk-tile-note" id="risk-vol-note"></div>
+          </div>
+          <div class="risk-tile">
+            <div class="risk-tile-label">최대 낙폭(MDD)</div>
+            <div class="risk-tile-value" id="risk-mdd">-</div>
+            <div class="risk-tile-note">확보구간 고점 대비</div>
+          </div>
+          <div class="risk-tile">
+            <div class="risk-tile-label">52주 위치</div>
+            <div class="risk-tile-value" id="risk-pos">-</div>
+            <div class="risk-52-bar"><span id="risk-52-fill"></span></div>
+          </div>
+        </div>
+      </div>
+
       <div class="data-warning" id="tech-warning"></div>
     </section>
 
@@ -105,6 +127,37 @@
           <div class="fund-card-icon">🔄</div>
           <div class="fund-card-label">활동성</div>
           <div class="fund-card-value"><span id="fund-activity">-</span><small>/5.0</small></div>
+        </div>
+      </div>
+
+      <div class="valuation-block" id="valuation-block">
+        <h3 class="section-sub-title">밸류에이션 <span class="info-dot" title="지금 가격이 이익·순자산 대비 싼지 비싼지. PER=주가/주당순이익(연환산), PBR=주가/주당순자산. 종가와 DART 재무제표로 산출한 참고값이며 시장 공표치와 소수 오차가 있을 수 있습니다.">ⓘ</span></h3>
+        <div class="val-tiles">
+          <div class="val-tile">
+            <div class="val-tile-label">PER <small>(연환산)</small></div>
+            <div class="val-tile-value" id="val-per">-</div>
+            <div class="val-tile-note" id="val-per-note"></div>
+          </div>
+          <div class="val-tile">
+            <div class="val-tile-label">PBR</div>
+            <div class="val-tile-value" id="val-pbr">-</div>
+            <div class="val-tile-note" id="val-pbr-note"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="quality-block" id="quality-block">
+        <h3 class="section-sub-title">재무 건전성 <span class="info-dot" title="Piotroski F-Score(2000): 수익성·재무구조·효율성 9개 항목을 점검해 재무 개선 여부를 0~9로 요약한 학술 검증 퀄리티 지표. ROE는 자기자본 대비 수익성.">ⓘ</span></h3>
+        <div class="quality-row">
+          <div class="fscore-wrap">
+            <div class="fscore-badge" id="fscore-badge">-</div>
+            <div class="fscore-caption">F-Score<br><span id="fscore-max">/9</span></div>
+          </div>
+          <div class="quality-metrics">
+            <div class="qm"><span class="qm-label">ROE</span><span class="qm-value" id="q-roe">-</span></div>
+            <div class="qm"><span class="qm-label">ROA</span><span class="qm-value" id="q-roa">-</span></div>
+            <div class="qm-interp" id="fscore-interp"></div>
+          </div>
         </div>
       </div>
 

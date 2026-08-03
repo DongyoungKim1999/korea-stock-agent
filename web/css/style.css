@@ -219,6 +219,21 @@ html, body {
 .radar-wrap { width: 160px; height: 160px; flex-shrink: 0; }
 
 .data-warning { margin-top: 10px; font-size: 11px; color: var(--warning); }
+
+/* ---------- 리스크 지표 (기술 패널 하단) ---------- */
+
+.risk-block { margin-top: 16px; }
+.risk-tiles { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; }
+.risk-tile { background: var(--bg-card-alt); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px; }
+.risk-tile-label { font-size: 11px; color: var(--text-secondary); }
+.risk-tile-value { font-size: 18px; font-weight: 700; margin-top: 4px; font-variant-numeric: tabular-nums; }
+.risk-tile-note { font-size: 10px; color: var(--text-muted); margin-top: 2px; min-height: 12px; }
+.risk-tile-value.risk-low { color: var(--good); }
+.risk-tile-value.risk-mid { color: var(--text-primary); }
+.risk-tile-value.risk-high { color: var(--warning); }
+.risk-tile-value.risk-vhigh { color: var(--critical); }
+.risk-52-bar { position: relative; height: 5px; border-radius: 3px; background: rgba(255,255,255,.10); margin-top: 8px; overflow: hidden; }
+.risk-52-bar span { position: absolute; left: 0; top: 0; height: 100%; border-radius: 3px; background: linear-gradient(90deg, var(--series-1), var(--good)); }
 .data-warning:empty { display: none; }
 
 /* ---------- fundamental panel ---------- */
@@ -241,6 +256,35 @@ html, body {
 .check-list li::before { content: "✓"; color: var(--good); font-weight: 700; flex-shrink: 0; }
 
 .fund-footnote { font-size: 10px; color: var(--text-muted); margin-top: 8px; }
+
+/* ---------- 밸류에이션 & 재무건전성 (기본 패널) ---------- */
+
+.valuation-block, .quality-block { margin-bottom: 16px; }
+.val-tiles { display: grid; grid-template-columns: repeat(2,1fr); gap: 8px; }
+.val-tile { background: var(--bg-card-alt); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px; }
+.val-tile-label { font-size: 11px; color: var(--text-secondary); }
+.val-tile-label small { color: var(--text-muted); font-weight: 400; }
+.val-tile-value { font-size: 20px; font-weight: 700; margin-top: 4px; font-variant-numeric: tabular-nums; }
+.val-tile-value.val-cheap { color: var(--good); }
+.val-tile-value.val-warn { color: var(--warning); }
+.val-tile-note { font-size: 10px; color: var(--text-muted); margin-top: 2px; min-height: 12px; }
+
+.quality-row { display: flex; gap: 14px; align-items: center; background: var(--bg-card-alt); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px; }
+.fscore-wrap { display: flex; flex-direction: column; align-items: center; gap: 2px; flex-shrink: 0; }
+.fscore-badge {
+  width: 52px; height: 52px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  font-size: 24px; font-weight: 800; font-variant-numeric: tabular-nums;
+  background: rgba(255,255,255,.06); color: var(--text-primary); border: 2px solid var(--border-strong);
+}
+.fscore-badge.fs-good { color: var(--good); border-color: var(--good); background: rgba(22,193,114,.12); }
+.fscore-badge.fs-mid { color: var(--warning); border-color: var(--warning); background: rgba(250,178,25,.12); }
+.fscore-badge.fs-bad { color: var(--critical); border-color: var(--critical); background: rgba(229,72,77,.12); }
+.fscore-caption { font-size: 10px; color: var(--text-muted); text-align: center; line-height: 1.3; }
+.quality-metrics { flex: 1; display: flex; flex-direction: column; gap: 5px; }
+.qm { display: flex; justify-content: space-between; font-size: 12.5px; }
+.qm-label { color: var(--text-secondary); }
+.qm-value { font-weight: 700; font-variant-numeric: tabular-nums; }
+.qm-interp { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
 
 .panel-empty { font-size: 12px; color: var(--text-muted); padding: 20px 6px; text-align: center; }
 

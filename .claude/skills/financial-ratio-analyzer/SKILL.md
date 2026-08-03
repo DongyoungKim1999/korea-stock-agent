@@ -33,12 +33,19 @@ python3 .claude/skills/financial-ratio-analyzer/scripts/compute_ratios.py \
   --peer output/cache/raw/000660_financials_peer.json \
   --peer output/cache/raw/012450_financials_peer.json \
   --comparison-basis industry_average \
+  --latest-close 70000 \
   --out output/cache/raw/005930_ratios.json
 ```
+
+`--latest-close`(선택): 최근 종가를 주면 밸류에이션(PER/PBR)까지 계산한다. 종가는
+price-data-fetcher 결과(`latest_close`)를 그대로 넘기면 된다 — 없으면 밸류에이션만 생략되고
+나머지는 정상 산출된다.
 
 ## 출력 구조
 
 - `stability` / `growth` / `activity`: 각 카테고리 내 지표별 `{target, peer_average, relative_favorability, higher_is_better}`. `relative_favorability`는 **항상 1보다 크면 target이 유리**하도록 정규화되어 있다(부채비율처럼 낮을수록 좋은 지표는 스크립트가 이미 역수 처리함 — fundamental-analyst가 다시 뒤집을 필요 없음)
+- `quality`: `roe_pct`, `roa_pct`(연환산), `f_score`(Piotroski F-Score 0~9 — `score`/`max_score`/항목별 `checks`/`interpretation`). 근거·한계는 `docs/reference/valuation-quality-risk-notes.md` 참조
+- `valuation`: `per`(연환산)·`pbr`·`eps_annualized`·`bps`·`shares_estimated`·`basis`. `basis="eps_derived"`면 종가+EPS 역산으로 산출됨, `"unavailable"`이면 EPS 미공시 등으로 계산 불가. **PBR<1은 순자산가치 이하**라는 의미 있는 저평가 신호
 - `growth_trend_by_period`: target의 최근 여러 분기 YoY 성장률 추이 (가속/둔화 판단용, 피어 비교와 무관)
 - `comparison_basis`: `industry_average` / `market_average_fallback` / `unavailable` — 리포트에 반드시 그대로 노출할 것 (근거 투명성)
 - 개별 지표값이 `null`이면 원자료에서 해당 계정과목을 못 찾은 것 (금융업 등 특수 업종은 계정구조가 달라 발생 가능) — 그 지표만 "산출불가"로 표시하고 나머지로 진행

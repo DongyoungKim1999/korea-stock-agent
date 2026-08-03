@@ -198,6 +198,7 @@ function renderTechnical(data) {
         : '<div class="panel-empty">기술적분석 데이터를 아직 생성하지 못했습니다</div>';
     document.getElementById("indicator-table").innerHTML = "";
     clearRadar();
+    renderRisk(null);
     warnEl.textContent = data && data.reason ? `사유: ${data.reason}` : "";
     return;
   }
@@ -228,7 +229,47 @@ function renderTechnical(data) {
     .join("");
   renderRadar(document.getElementById("indicator-radar"), rowsDef.map(([label, v]) => ({ label: label.split(" ")[0], value: v })));
 
+  renderRisk(ind.risk);
   warnEl.textContent = humanizeWarnings(data.warnings);
+}
+
+// ---------- risk panel ----------
+
+function volatilityBand(volPct) {
+  // 국내 개별주 연변동성 대략적 감각: 20 미만 낮음 / 20~40 보통 / 40~60 높음 / 60+ 매우 높음
+  if (volPct == null) return { label: "", cls: "" };
+  if (volPct < 20) return { label: "낮음", cls: "risk-low" };
+  if (volPct < 40) return { label: "보통", cls: "risk-mid" };
+  if (volPct < 60) return { label: "높음", cls: "risk-high" };
+  return { label: "매우 높음", cls: "risk-vhigh" };
+}
+
+function renderRisk(risk) {
+  const volEl = document.getElementById("risk-vol");
+  const volNote = document.getElementById("risk-vol-note");
+  const mddEl = document.getElementById("risk-mdd");
+  const posEl = document.getElementById("risk-pos");
+  const fill = document.getElementById("risk-52-fill");
+  if (!risk) {
+    volEl.textContent = mddEl.textContent = posEl.textContent = "-";
+    volNote.textContent = "";
+    volEl.className = "risk-tile-value";
+    if (fill) fill.style.width = "0%";
+    return;
+  }
+  const vol = risk.annualized_volatility_pct;
+  const band = volatilityBand(vol);
+  volEl.textContent = vol == null ? "-" : `${vol.toFixed(1)}%`;
+  volEl.className = "risk-tile-value " + band.cls;
+  volNote.textContent = band.label;
+
+  mddEl.textContent = risk.max_drawdown_pct == null ? "-" : `${risk.max_drawdown_pct.toFixed(1)}%`;
+  mddEl.className = "risk-tile-value risk-high";
+
+  const pos = risk.week52_position_pct;
+  posEl.textContent = pos == null ? "-" : `${pos.toFixed(0)}%`;
+  posEl.className = "risk-tile-value";
+  if (fill) fill.style.width = `${pos == null ? 0 : Math.max(0, Math.min(100, pos))}%`;
 }
 
 // ---------- fundamental panel ----------
@@ -251,9 +292,14 @@ function renderFundamental(data) {
     document.getElementById("fund-summary-list").innerHTML =
       data && data.status === "unsupported" ? '<li>상세분석 미지원 종목입니다.</li>' : "";
     document.getElementById("fund-footnote").textContent = "";
+    renderValuation(null);
+    renderQuality(null);
     warnEl.textContent = data && data.reason ? `사유: ${data.reason}` : "";
     return;
   }
+
+  renderValuation(data.valuation);
+  renderQuality(data.quality);
 
   document.getElementById("fund-stability").textContent = fmtRatio(data.stability_score);
   document.getElementById("fund-growth").textContent = fmtRatio(data.growth_score);
@@ -288,6 +334,59 @@ function renderFundamental(data) {
     (data.sensitivity_applied ? Object.entries(data.sensitivity_applied).filter(([, v]) => v !== 1.0).map(([k, v]) => `${k}×${v}`).join(", ") || "없음" : "없음");
 
   warnEl.textContent = humanizeWarnings(data.warnings);
+}
+
+function renderValuation(val) {
+  const perEl = document.getElementById("val-per");
+  const pbrEl = document.getElementById("val-pbr");
+  const perNote = document.getElementById("val-per-note");
+  const pbrNote = document.getElementById("val-pbr-note");
+  if (!val || val.basis !== "eps_derived") {
+    perEl.textContent = pbrEl.textContent = "-";
+    perNote.textContent = pbrNote.textContent = val && val.basis === "unavailable" ? "산출 불가(EPS 미공시 등)" : "";
+    perEl.className = pbrEl.className = "val-tile-value";
+    return;
+  }
+  // PER: 음수면 적자. 절대 저평가/고평가 단정은 피하고 방향성만 가볍게.
+  if (val.per == null) { perEl.textContent = "-"; perNote.textContent = ""; }
+  else if (val.per < 0) { perEl.textContent = "적자"; perEl.className = "val-tile-value val-warn"; perNote.textContent = "순이익 마이너스"; }
+  else {
+    perEl.textContent = `${val.per.toFixed(1)}배`;
+    perEl.className = "val-tile-value";
+    perNote.textContent = val.per < 10 ? "이익 대비 낮은 편" : val.per > 30 ? "이익 대비 높은 편" : "";
+  }
+  // PBR: 1배 미만은 순자산가치 이하 — 명확히 의미 있는 신호라 표시.
+  if (val.pbr == null) { pbrEl.textContent = "-"; pbrNote.textContent = ""; pbrEl.className = "val-tile-value"; }
+  else {
+    pbrEl.textContent = `${val.pbr.toFixed(2)}배`;
+    if (val.pbr < 1) { pbrEl.className = "val-tile-value val-cheap"; pbrNote.textContent = "순자산가치 이하"; }
+    else { pbrEl.className = "val-tile-value"; pbrNote.textContent = val.pbr > 3 ? "순자산 대비 높음" : ""; }
+  }
+}
+
+function renderQuality(q) {
+  const badge = document.getElementById("fscore-badge");
+  const maxEl = document.getElementById("fscore-max");
+  const roeEl = document.getElementById("q-roe");
+  const roaEl = document.getElementById("q-roa");
+  const interp = document.getElementById("fscore-interp");
+  if (!q) {
+    badge.textContent = "-"; badge.className = "fscore-badge"; maxEl.textContent = "/9";
+    roeEl.textContent = roaEl.textContent = "-"; interp.textContent = "";
+    return;
+  }
+  const fs = q.f_score || {};
+  const score = fs.score, max = fs.max_score || 9;
+  badge.textContent = score == null ? "-" : score;
+  maxEl.textContent = `/${max}`;
+  // 색: 통과비율 기준(7/9↑ 우량, 4/9↑ 보통, 그 아래 취약)
+  const ratio = (score != null && max) ? score / max : null;
+  badge.className = "fscore-badge " + (ratio == null ? "" : ratio >= 7 / 9 ? "fs-good" : ratio >= 4 / 9 ? "fs-mid" : "fs-bad");
+  interp.textContent = fs.interpretation && fs.interpretation !== "산출불가" ? fs.interpretation : "";
+
+  roeEl.textContent = q.roe_pct == null ? "-" : `${q.roe_pct.toFixed(1)}%`;
+  roeEl.style.color = q.roe_pct == null ? "var(--text-muted)" : q.roe_pct >= 15 ? "var(--good)" : q.roe_pct < 5 ? "var(--critical)" : "";
+  roaEl.textContent = q.roa_pct == null ? "-" : `${q.roa_pct.toFixed(1)}%`;
 }
 
 // ---------- select stock ----------
@@ -355,6 +454,9 @@ function currentStockContext() {
   if (!code || !state.watchlistCodes.has(code)) return null;
   const tech = state.techCache[code];
   const fund = state.fundCache[code];
+  const risk = tech && tech.status === "ok" && tech.indicators ? tech.indicators.risk : null;
+  const val = fund && fund.status === "ok" ? fund.valuation : null;
+  const q = fund && fund.status === "ok" ? fund.quality : null;
   return {
     code,
     name: (state.watchlist.find((w) => w.code === code) || {}).name,
@@ -362,6 +464,9 @@ function currentStockContext() {
     fundamental_scores: fund && fund.status === "ok"
       ? { stability: fund.stability_score, growth: fund.growth_score, activity: fund.activity_score }
       : null,
+    valuation: val && val.basis === "eps_derived" ? { per: val.per, pbr: val.pbr } : null,
+    quality: q ? { f_score: q.f_score && q.f_score.score, f_score_max: q.f_score && q.f_score.max_score, roe_pct: q.roe_pct, roa_pct: q.roa_pct } : null,
+    risk: risk ? { annualized_volatility_pct: risk.annualized_volatility_pct, max_drawdown_pct: risk.max_drawdown_pct, week52_position_pct: risk.week52_position_pct } : null,
   };
 }
 

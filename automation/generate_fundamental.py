@@ -25,8 +25,31 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common import krx_client  # noqa: E402
 
 WEB_DATA_DIR = Path(__file__).resolve().parents[1] / "web" / "data" / "fundamental"
+TECHNICAL_DIR = Path(__file__).resolve().parents[1] / "web" / "data" / "technical"
 MAX_PEERS = 15
 MIN_PEERS = 5
+
+
+def read_latest_close(code: str) -> float | None:
+    """직전 단계(generate_technical)가 만든 기술적분석 JSON에서 최근 종가를 읽는다 —
+    밸류에이션(PER/PBR) 계산에 필요한 종가를 추가 API 호출 없이 재사용하기 위함."""
+    path = TECHNICAL_DIR / f"{code}.json"
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    if data.get("status") != "ok":
+        return None
+    ind = data.get("indicators") or {}
+    close = ind.get("latest_close")
+    if close is None and data.get("price_series"):
+        close = data["price_series"][-1].get("close")
+    try:
+        return float(close) if close is not None else None
+    except (TypeError, ValueError):
+        return None
 
 
 def fetch_sector_classifications(latest_date: str) -> dict:
@@ -104,7 +127,8 @@ def generate_one(entry: dict, sector_dfs: dict, fetched: dict[str, dict], tmp_di
         for peer_code in wl_peer_codes:
             peer_paths.append(str(tmp_dir / f"{peer_code}_target.json"))  # 이미 저장돼있는 파일 재사용
 
-    ratios = compute_ratios.analyze(str(target_path), peer_paths, basis if peer_paths else None)
+    latest_close = read_latest_close(code)
+    ratios = compute_ratios.analyze(str(target_path), peer_paths, basis if peer_paths else None, latest_close)
     if ratios.get("status") != "ok":
         return {"status": "error", "code": code, "name": name, "reason": ratios.get("reason")}
 
@@ -125,6 +149,8 @@ def generate_one(entry: dict, sector_dfs: dict, fetched: dict[str, dict], tmp_di
         "stability": ratios.get("stability"),
         "growth": ratios.get("growth"),
         "activity": ratios.get("activity"),
+        "quality": ratios.get("quality"),
+        "valuation": ratios.get("valuation"),
         "warnings": target.get("warnings", []) + ratios.get("warnings", []),
     }
 

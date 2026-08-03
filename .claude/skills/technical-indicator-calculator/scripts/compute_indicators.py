@@ -124,6 +124,52 @@ def _classify_candles(df: pd.DataFrame, n: int = 3) -> list[dict]:
     return results[-n:]
 
 
+TRADING_DAYS_YEAR = 252
+WEEK52_WINDOW = 250  # 약 1년 거래일 (52주 고저 산출용)
+
+
+def _compute_risk(df: pd.DataFrame) -> dict:
+    """가격 시계열만으로 산출하는 리스크 지표 — 리스크 관리의 표준 척도들.
+
+    - 연율화 변동성: 일간수익률 표준편차 × √252 (연간 기준으로 환산한 가격 출렁임 폭)
+    - 최대낙폭(MDD): 확보 구간 내 고점 대비 최대 하락률 — '물렸을 때 최악'을 정량화
+    - 52주 고저 위치: 현재가가 최근 1년 밴드 어디에 있는지(0=연저점, 100=연고점)
+    이 값들은 raw 수치일 뿐 점수화하지 않는다(해석은 LLM/결정론적 채점의 몫).
+    """
+    close = df["close"]
+    n = len(close)
+    daily_ret = close.pct_change().dropna()
+
+    annualized_vol = None
+    if len(daily_ret) >= 20:
+        annualized_vol = _none_if_nan(daily_ret.std(ddof=0) * np.sqrt(TRADING_DAYS_YEAR) * 100)
+
+    # 최대낙폭: 확보한 전체 구간(최대 ~300일) 기준
+    running_max = close.cummax()
+    drawdown = close / running_max - 1.0
+    max_drawdown = _none_if_nan(drawdown.min() * 100) if n >= 2 else None
+
+    # 52주(최근 250거래일) 고저 및 현재가 위치
+    window = close.tail(WEEK52_WINDOW)
+    hi, lo, last = window.max(), window.min(), close.iloc[-1]
+    week52_high = _none_if_nan(hi)
+    week52_low = _none_if_nan(lo)
+    position_pct = _none_if_nan((last - lo) / (hi - lo) * 100) if hi > lo else None
+
+    # 확보 구간 기준 누적수익률(참고용, 정확한 1년 아님 — 확보일수 함께 표기)
+    period_return = _none_if_nan((last / close.iloc[0] - 1) * 100) if n >= 2 and close.iloc[0] else None
+
+    return {
+        "annualized_volatility_pct": annualized_vol,
+        "max_drawdown_pct": max_drawdown,
+        "week52_high": week52_high,
+        "week52_low": week52_low,
+        "week52_position_pct": position_pct,
+        "period_return_pct": period_return,
+        "period_trading_days": int(n),
+    }
+
+
 def compute(payload: dict) -> dict:
     rows = payload.get("rows", [])
     if len(rows) < 20:
@@ -217,6 +263,7 @@ def compute(payload: dict) -> dict:
             "abnormally_low": abnormally_low_volume,
         },
         "candles": {"recent": _classify_candles(df, n=3)},
+        "risk": _compute_risk(df),
         "warnings": warnings,
     }
     if abnormally_low_volume:
