@@ -170,6 +170,31 @@ def _compute_risk(df: pd.DataFrame) -> dict:
     }
 
 
+def _support_resistance(df: pd.DataFrame, window: int = 120, k: int = 5) -> dict:
+    """최근 스윙 고/저점(local extrema)에서 현재가 기준 가장 가까운 지지/저항 가격대를 뽑는다.
+
+    스윙 고점 = 앞뒤 k봉 중 최고가인 지점, 스윙 저점 = 최저가인 지점. 저항은 현재가 위쪽의 가장
+    낮은 스윙고점(먼저 부딪히는 천장), 지지는 현재가 아래쪽의 가장 높은 스윙저점(먼저 기대는 바닥).
+    진입/이탈 참고용 수치일 뿐 점수화하지 않는다."""
+    look = df.tail(window).reset_index(drop=True)
+    if len(look) < 2 * k + 1:
+        return {"support": None, "resistance": None}
+    highs = look["high"].to_numpy()
+    lows = look["low"].to_numpy()
+    close = float(df["close"].iloc[-1])
+    swing_highs, swing_lows = [], []
+    for i in range(k, len(look) - k):
+        if highs[i] == highs[i - k:i + k + 1].max():
+            swing_highs.append(float(highs[i]))
+        if lows[i] == lows[i - k:i + k + 1].min():
+            swing_lows.append(float(lows[i]))
+    above = [h for h in swing_highs if h > close]
+    below = [l for l in swing_lows if l < close]
+    resistance = min(above) if above else (max(swing_highs) if swing_highs else None)
+    support = max(below) if below else (min(swing_lows) if swing_lows else None)
+    return {"support": _none_if_nan(support), "resistance": _none_if_nan(resistance)}
+
+
 def compute(payload: dict) -> dict:
     rows = payload.get("rows", [])
     if len(rows) < 20:
@@ -264,6 +289,7 @@ def compute(payload: dict) -> dict:
         },
         "candles": {"recent": _classify_candles(df, n=3)},
         "risk": _compute_risk(df),
+        "levels": _support_resistance(df),
         "warnings": warnings,
     }
     if abnormally_low_volume:

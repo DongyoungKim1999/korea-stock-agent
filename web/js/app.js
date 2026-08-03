@@ -199,6 +199,7 @@ function renderTechnical(data) {
     document.getElementById("indicator-table").innerHTML = "";
     clearRadar();
     renderRisk(null);
+    renderLevels(null);
     warnEl.textContent = data && data.reason ? `사유: ${data.reason}` : "";
     return;
   }
@@ -212,7 +213,7 @@ function renderTechnical(data) {
   renderGauge(data.score);
 
   const rows = data.price_series.slice(-state.currentRange);
-  renderPriceChart(document.getElementById("price-chart"), rows);
+  renderPriceChart(document.getElementById("price-chart"), rows, data.indicators.levels);
 
   const ind = data.indicators;
   const rowsDef = [
@@ -230,7 +231,21 @@ function renderTechnical(data) {
   renderRadar(document.getElementById("indicator-radar"), rowsDef.map(([label, v]) => ({ label: label.split(" ")[0], value: v })));
 
   renderRisk(ind.risk);
+  renderLevels(ind.levels, ind.latest_close);
   warnEl.textContent = humanizeWarnings(data.warnings);
+}
+
+function renderLevels(levels, close) {
+  const sEl = document.getElementById("lv-support");
+  const rEl = document.getElementById("lv-resistance");
+  const fmt = (v) => (v == null ? "-" : Math.round(v).toLocaleString("ko-KR"));
+  sEl.textContent = levels ? fmt(levels.support) : "-";
+  rEl.textContent = levels ? fmt(levels.resistance) : "-";
+  // 현재가와의 거리(%)를 툴팁으로
+  if (levels && close) {
+    if (levels.support) sEl.title = `현재가 대비 ${((levels.support / close - 1) * 100).toFixed(1)}%`;
+    if (levels.resistance) rEl.title = `현재가 대비 +${((levels.resistance / close - 1) * 100).toFixed(1)}%`;
+  }
 }
 
 // ---------- risk panel ----------
@@ -294,12 +309,16 @@ function renderFundamental(data) {
     document.getElementById("fund-footnote").textContent = "";
     renderValuation(null);
     renderQuality(null);
+    renderDividend(null);
+    renderTrend(null);
     warnEl.textContent = data && data.reason ? `사유: ${data.reason}` : "";
     return;
   }
 
   renderValuation(data.valuation);
   renderQuality(data.quality);
+  renderDividend(data.dividend);
+  renderTrend(data.earnings_trend);
 
   document.getElementById("fund-stability").textContent = fmtRatio(data.stability_score);
   document.getElementById("fund-growth").textContent = fmtRatio(data.growth_score);
@@ -389,6 +408,131 @@ function renderQuality(q) {
   roaEl.textContent = q.roa_pct == null ? "-" : `${q.roa_pct.toFixed(1)}%`;
 }
 
+function renderDividend(div) {
+  const tiles = document.getElementById("div-tiles");
+  const none = document.getElementById("div-none");
+  const y = document.getElementById("div-yield");
+  const p = document.getElementById("div-payout");
+  const d = document.getElementById("div-dps");
+  if (!div || div.status === "none") {
+    // 무배당(확정) 또는 데이터 없음
+    tiles.hidden = true;
+    none.hidden = !(div && div.status === "none");
+    if (!div) none.hidden = true;
+    return;
+  }
+  tiles.hidden = false;
+  none.hidden = true;
+  y.textContent = div.dividend_yield_pct == null ? "-" : `${div.dividend_yield_pct.toFixed(1)}%`;
+  y.style.color = div.dividend_yield_pct == null ? "" : div.dividend_yield_pct >= 4 ? "var(--good)" : "";
+  p.textContent = div.payout_pct == null ? "-" : `${Math.round(div.payout_pct)}%`;
+  d.textContent = div.dps == null ? "-" : `${Math.round(div.dps).toLocaleString("ko-KR")}원`;
+}
+
+function fmtEok(v) {
+  // 원 단위를 조/억으로 축약
+  if (v == null) return "-";
+  const abs = Math.abs(v);
+  if (abs >= 1e12) return `${(v / 1e12).toFixed(1)}조`;
+  if (abs >= 1e8) return `${Math.round(v / 1e8).toLocaleString("ko-KR")}억`;
+  return Math.round(v).toLocaleString("ko-KR");
+}
+
+function renderTrend(trend) {
+  const table = document.getElementById("trend-table");
+  const block = document.getElementById("trend-block");
+  if (!trend || !trend.length) {
+    table.innerHTML = "";
+    block.hidden = true;
+    return;
+  }
+  block.hidden = false;
+  const maxRev = Math.max(...trend.map((t) => t.revenue || 0), 1);
+  let html = `<tr><th>연도</th><th>매출</th><th>영업이익률</th><th>순이익률</th></tr>`;
+  for (const t of trend) {
+    const barW = t.revenue ? Math.max(3, (t.revenue / maxRev) * 100) : 0;
+    const om = t.op_margin_pct, nm = t.net_margin_pct;
+    html += `<tr>
+      <td>${String(t.year).slice(2)}</td>
+      <td class="tr-rev"><span class="tr-bar" style="width:${barW}%"></span><span class="tr-rev-val">${fmtEok(t.revenue)}</span></td>
+      <td style="color:${om == null ? "var(--text-muted)" : om < 0 ? "var(--critical)" : ""}">${om == null ? "-" : om.toFixed(1) + "%"}</td>
+      <td style="color:${nm == null ? "var(--text-muted)" : nm < 0 ? "var(--critical)" : ""}">${nm == null ? "-" : nm.toFixed(1) + "%"}</td>
+    </tr>`;
+  }
+  table.innerHTML = html;
+}
+
+// ---------- 종합 투자 요약 (4개 축 통합) ----------
+
+function renderSummaryStrip(code) {
+  const strip = document.getElementById("summary-strip");
+  if (!code) { strip.hidden = true; return; }
+  const tech = state.techCache[code];
+  const fund = state.fundCache[code];
+  const okT = tech && tech.status === "ok";
+  const okF = fund && fund.status === "ok";
+  if (!okT && !okF) { strip.hidden = true; return; }
+
+  const tags = [];
+  // 밸류에이션
+  const val = okF ? fund.valuation : null;
+  if (val && val.basis === "eps_derived") {
+    if (val.pbr != null && val.pbr < 1) tags.push({ t: "PBR<1 저평가", c: "good" });
+    else if (val.per != null && val.per > 0 && val.per < 10) tags.push({ t: "이익 대비 저평가", c: "good" });
+    else if (val.per != null && val.per > 40) tags.push({ t: "밸류에이션 부담", c: "warn" });
+  }
+  // 퀄리티
+  const q = okF ? fund.quality : null;
+  const fs = q && q.f_score ? q.f_score : null;
+  if (fs && fs.max_score) {
+    const r = fs.score / fs.max_score;
+    if (r >= 7 / 9) tags.push({ t: `우량(F${fs.score})`, c: "good" });
+    else if (r < 4 / 9) tags.push({ t: `재무취약(F${fs.score})`, c: "bad" });
+  }
+  if (q && q.roe_pct != null && q.roe_pct >= 15) tags.push({ t: `고ROE ${q.roe_pct.toFixed(0)}%`, c: "good" });
+  // 배당
+  const dv = okF ? fund.dividend : null;
+  if (dv && dv.status === "ok" && dv.dividend_yield_pct != null && dv.dividend_yield_pct >= 4)
+    tags.push({ t: `고배당 ${dv.dividend_yield_pct.toFixed(1)}%`, c: "good" });
+  // 기술
+  if (okT && tech.score != null) {
+    if (tech.score >= 4) tags.push({ t: "기술적 강세", c: "good" });
+    else if (tech.score <= 2) tags.push({ t: "기술적 약세", c: "bad" });
+  }
+  // 리스크
+  const risk = okT ? (tech.indicators || {}).risk : null;
+  if (risk && risk.annualized_volatility_pct != null) {
+    if (risk.annualized_volatility_pct >= 60) tags.push({ t: "고변동성", c: "warn" });
+  }
+  if (risk && risk.week52_position_pct != null) {
+    if (risk.week52_position_pct <= 15) tags.push({ t: "52주 바닥권", c: "warn" });
+    else if (risk.week52_position_pct >= 90) tags.push({ t: "52주 고점권", c: "warn" });
+  }
+
+  const name = (state.watchlist.find((w) => w.code === code) || {}).name || code;
+  document.getElementById("ss-name").textContent = `${name} 종합`;
+  document.getElementById("ss-tags").innerHTML = tags.length
+    ? tags.map((x) => `<span class="ss-tag ss-${x.c}">${x.t}</span>`).join("")
+    : `<span class="ss-tag">특이 신호 없음</span>`;
+  document.getElementById("ss-oneliner").textContent = buildOneliner(tags);
+  strip.hidden = false;
+}
+
+function buildOneliner(tags) {
+  const has = (kw) => tags.some((x) => x.t.includes(kw));
+  const parts = [];
+  if (has("저평가")) parts.push("밸류에이션은 매력적");
+  else if (has("부담")) parts.push("밸류에이션은 부담");
+  if (has("우량") || has("고ROE")) parts.push("재무 퀄리티 양호");
+  else if (has("취약")) parts.push("재무 건전성 주의");
+  if (has("고배당")) parts.push("배당 매력 있음");
+  if (has("강세")) parts.push("단기 기술적 강세");
+  else if (has("약세")) parts.push("단기 기술적 약세");
+  if (has("고변동성") || has("바닥권") || has("고점권")) parts.push("리스크 유의");
+  const body = parts.length ? parts.join(" · ") : "네 축 모두 뚜렷한 편중 없이 중립적";
+  return `${body}. (투자 판단·책임은 본인에게 있으며, 매수·매도 권유가 아닌 특성 요약입니다.)`;
+}
+
 // ---------- select stock ----------
 
 async function selectStock(code) {
@@ -398,6 +542,7 @@ async function selectStock(code) {
   if (!state.watchlistCodes.has(code)) {
     renderTechnical({ status: "unsupported" });
     renderFundamental({ status: "unsupported" });
+    renderSummaryStrip(null);
     return;
   }
 
@@ -414,6 +559,8 @@ async function selectStock(code) {
   } catch (e) {
     renderFundamental({ status: "error", reason: "데이터 파일을 찾을 수 없습니다" });
   }
+
+  renderSummaryStrip(code);
 }
 
 function wireRangeTabs() {
@@ -454,9 +601,13 @@ function currentStockContext() {
   if (!code || !state.watchlistCodes.has(code)) return null;
   const tech = state.techCache[code];
   const fund = state.fundCache[code];
-  const risk = tech && tech.status === "ok" && tech.indicators ? tech.indicators.risk : null;
+  const ind = tech && tech.status === "ok" ? tech.indicators : null;
+  const risk = ind ? ind.risk : null;
+  const levels = ind ? ind.levels : null;
   const val = fund && fund.status === "ok" ? fund.valuation : null;
   const q = fund && fund.status === "ok" ? fund.quality : null;
+  const dv = fund && fund.status === "ok" ? fund.dividend : null;
+  const trend = fund && fund.status === "ok" ? fund.earnings_trend : null;
   return {
     code,
     name: (state.watchlist.find((w) => w.code === code) || {}).name,
@@ -467,6 +618,9 @@ function currentStockContext() {
     valuation: val && val.basis === "eps_derived" ? { per: val.per, pbr: val.pbr } : null,
     quality: q ? { f_score: q.f_score && q.f_score.score, f_score_max: q.f_score && q.f_score.max_score, roe_pct: q.roe_pct, roa_pct: q.roa_pct } : null,
     risk: risk ? { annualized_volatility_pct: risk.annualized_volatility_pct, max_drawdown_pct: risk.max_drawdown_pct, week52_position_pct: risk.week52_position_pct } : null,
+    support_resistance: levels ? { support: levels.support, resistance: levels.resistance } : null,
+    dividend: dv && dv.status === "ok" ? { yield_pct: dv.dividend_yield_pct, payout_pct: dv.payout_pct } : (dv && dv.status === "none" ? "무배당" : null),
+    earnings_trend: trend && trend.length ? trend.map((t) => ({ year: t.year, revenue: t.revenue, op_margin_pct: t.op_margin_pct })) : null,
   };
 }
 

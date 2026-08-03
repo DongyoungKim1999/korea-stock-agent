@@ -23,6 +23,7 @@ from watchlist import WATCHLIST, WATCHLIST_BY_CODE
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common import krx_client  # noqa: E402
+from common import dart_client  # noqa: E402
 
 WEB_DATA_DIR = Path(__file__).resolve().parents[1] / "web" / "data" / "fundamental"
 TECHNICAL_DIR = Path(__file__).resolve().parents[1] / "web" / "data" / "technical"
@@ -95,6 +96,57 @@ def find_peers_via_watchlist(code: str, sector: str, fetched: dict[str, dict]) -
     return ok_codes[:MAX_PEERS], "market_average_fallback"
 
 
+def compute_dividend(target: dict, latest_close: float | None) -> dict | None:
+    """최근 확정 사업연도 배당 → 현재 종가 기준 배당수익률까지 계산. 배당 없으면 status='none'."""
+    corp_code = target.get("corp_code")
+    if not corp_code:
+        return None
+    annual_years = [p["bsns_year"] for p in target.get("periods", []) if p.get("reprt_code") == "11011"]
+    year = annual_years[0] if annual_years else None
+    if year is None:
+        return None
+    try:
+        div = dart_client.get_dividend_info(corp_code, year)
+    except Exception:
+        return None
+    if not div:
+        return {"status": "none", "year": year}
+    dps = div.get("dps")
+    yld = (dps / latest_close * 100) if (dps and latest_close) else div.get("reported_yield_pct")
+    return {
+        "status": "ok",
+        "year": year,
+        "dps": dps,
+        "payout_pct": div.get("payout_pct"),
+        "dividend_yield_pct": round(yld, 2) if yld is not None else None,
+    }
+
+
+def compute_earnings_trend(corp_code: str | None) -> list[dict]:
+    """최근 4개 사업연도 매출·영업이익·순이익 + 영업/순이익률 추이(오름차순)."""
+    if not corp_code:
+        return []
+    try:
+        annuals = dart_client.get_annual_statements(corp_code, years=4)
+    except Exception:
+        return []
+    trend = []
+    for period in reversed(annuals):  # 최신→과거를 과거→최신으로
+        raw = compute_ratios.extract_raw_amounts(period["accounts"])
+        rev = raw["revenue"]["thstrm"]
+        oi = raw["operating_income"]["thstrm"]
+        ni = raw["net_income"]["thstrm"]
+        trend.append({
+            "year": period["bsns_year"],
+            "revenue": rev,
+            "operating_income": oi,
+            "net_income": ni,
+            "op_margin_pct": round(oi / rev * 100, 1) if rev and oi is not None else None,
+            "net_margin_pct": round(ni / rev * 100, 1) if rev and ni is not None else None,
+        })
+    return trend
+
+
 def generate_one(entry: dict, sector_dfs: dict, fetched: dict[str, dict], tmp_dir: Path) -> dict:
     code, name = entry["code"], entry["name"]
 
@@ -151,6 +203,8 @@ def generate_one(entry: dict, sector_dfs: dict, fetched: dict[str, dict], tmp_di
         "activity": ratios.get("activity"),
         "quality": ratios.get("quality"),
         "valuation": ratios.get("valuation"),
+        "dividend": compute_dividend(target, latest_close),
+        "earnings_trend": compute_earnings_trend(target.get("corp_code")),
         "warnings": target.get("warnings", []) + ratios.get("warnings", []),
     }
 

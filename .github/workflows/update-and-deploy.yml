@@ -52,6 +52,17 @@ jobs:
               - '.claude/skills/**'
               - '.github/workflows/update-and-deploy.yml'
 
+      - name: DART 원본 응답 캐시 복원/보존
+        # 확정 공시된 재무제표는 불변이라, 한 번 받은 원본(output/cache/raw)을 실행 간에 보존하면
+        # 계산 로직만 바꾸는 수정 시 DART를 거의 재호출하지 않는다(70분+ → 수 분). key에 run_id를 넣어
+        # 매 실행 끝에 갱신본을 저장하고, restore-keys 접두어로 직전 실행의 캐시를 이어받는다.
+        uses: actions/cache@v4
+        with:
+          path: output/cache/raw
+          key: dart-raw-${{ github.run_id }}
+          restore-keys: |
+            dart-raw-
+
       - name: 데이터 생성 (technical/fundamental/attention → web/data)
         # 정기 스케줄/수동 실행은 항상 재생성. push 트리거는 데이터 생성 로직(automation/common/skills)이
         # 바뀐 경우에만 재생성한다 — web/*.html, css, js 같은 순수 UI 변경까지 매번 DART·pykrx를

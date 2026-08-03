@@ -20,7 +20,9 @@ CHART_DAYS = 300
 
 def generate_one(entry: dict) -> dict:
     code, name = entry["code"], entry["name"]
-    price = fetch_price.fetch_individual(code, CHART_DAYS)
+    # include_market_cap=False: 시가총액 엔드포인트는 GHA에서 100% 차단 + UI 미사용이라 건너뛴다
+    # (종목마다 doomed 호출로 낭비되던 시간 제거).
+    price = fetch_price.fetch_individual(code, CHART_DAYS, include_market_cap=False)
     if price["status"] == "error":
         return {"status": "error", "code": code, "name": name, "reason": price.get("reason")}
 

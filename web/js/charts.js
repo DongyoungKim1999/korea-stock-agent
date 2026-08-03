@@ -45,7 +45,7 @@ function simpleMovingAverage(rows, period) {
 let _priceChart = null;
 let _priceChartResizeObs = null;
 
-function renderPriceChart(containerEl, rows) {
+function renderPriceChart(containerEl, rows, levels) {
   if (_priceChartResizeObs) { _priceChartResizeObs.disconnect(); _priceChartResizeObs = null; }
   if (_priceChart) { _priceChart.remove(); _priceChart = null; }
   containerEl.innerHTML = "";
@@ -76,6 +76,16 @@ function renderPriceChart(containerEl, rows) {
     priceFormat: krwPriceFormat,
   });
   candleSeries.setData(rows.map(r => ({ time: r.date, open: r.open, high: r.high, low: r.low, close: r.close })));
+
+  // 지지/저항 수평선 — 진입/이탈 참고. 저항=빨강(상단 벽), 지지=파랑(하단 바닥)
+  if (levels) {
+    if (levels.resistance != null) {
+      candleSeries.createPriceLine({ price: levels.resistance, color: PALETTE.candleUp, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true, title: "저항" });
+    }
+    if (levels.support != null) {
+      candleSeries.createPriceLine({ price: levels.support, color: PALETTE.candleDown, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true, title: "지지" });
+    }
+  }
 
   // MA선은 양봉/음봉 색(빨강·파랑)과 겹치지 않는 색만 사용 — 캔들과 추세선을 한눈에 구분하기 위함
   const ma5 = chart.addLineSeries({ color: PALETTE.series4, lineWidth: 1, priceLineVisible: false, lastValueVisible: false, priceFormat: krwPriceFormat });

@@ -22,7 +22,7 @@ MIN_ROW_RATIO = 0.9        # 요청 거래일 대비 이 비율 미만이면 'pa
 MARKET_SOFT_FLOOR = 2000   # 전종목 수집 결과가 이보다 적으면 경고(코스피+코스닥 상장사 수 감안)
 
 
-def fetch_individual(code: str, days: int) -> dict:
+def fetch_individual(code: str, days: int, include_market_cap: bool = True) -> dict:
     warnings: list[str] = []
 
     try:
@@ -44,19 +44,23 @@ def fetch_individual(code: str, days: int) -> dict:
             }
         )
 
+    # 시가총액은 KRX 전종목류 엔드포인트라 클라우드/서버 IP에서 100% 차단된다(GitHub Actions에서
+    # 종목마다 실패하며 시간만 낭비). 대시보드 UI에서도 시가총액 표시를 뺐으므로 자동 파이프라인은
+    # include_market_cap=False로 아예 건너뛴다. 가정용 IP에서 돌리는 대화형 경로는 기본 True라 그대로 시도.
     market_cap_rows: list[dict] = []
-    try:
-        cap_df = krx_client.get_market_cap_series(code, trading_days=days)
-        for date, row in cap_df.iterrows():
-            market_cap_rows.append(
-                {
-                    "date": date.strftime("%Y-%m-%d"),
-                    "market_cap": int(row["시가총액"]) if "시가총액" in row else None,
-                    "shares_outstanding": int(row["상장주식수"]) if "상장주식수" in row else None,
-                }
-            )
-    except Exception as exc:
-        warnings.append(f"시가총액 조회 실패(비치명적): {exc}")
+    if include_market_cap:
+        try:
+            cap_df = krx_client.get_market_cap_series(code, trading_days=days)
+            for date, row in cap_df.iterrows():
+                market_cap_rows.append(
+                    {
+                        "date": date.strftime("%Y-%m-%d"),
+                        "market_cap": int(row["시가총액"]) if "시가총액" in row else None,
+                        "shares_outstanding": int(row["상장주식수"]) if "상장주식수" in row else None,
+                    }
+                )
+        except Exception as exc:
+            warnings.append(f"시가총액 조회 실패(비치명적): {exc}")
 
     status = "ok"
     if len(rows) < days * MIN_ROW_RATIO:

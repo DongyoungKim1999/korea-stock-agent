@@ -22,6 +22,14 @@
 
   <div class="freshness-bar" id="freshness-bar">데이터 갱신 정보를 불러오는 중...</div>
 
+  <div class="summary-strip" id="summary-strip" hidden>
+    <div class="ss-head">
+      <span class="ss-name" id="ss-name"></span>
+      <span class="ss-tags" id="ss-tags"></span>
+    </div>
+    <div class="ss-oneliner" id="ss-oneliner"></div>
+  </div>
+
   <main class="grid">
 
     <section class="panel panel-search" aria-label="검색 결과">
@@ -74,6 +82,11 @@
         <span style="margin-left:auto;color:var(--text-muted)"><i class="dot" style="background:var(--candle-up)"></i>양봉(상승) <i class="dot" style="background:var(--candle-down);margin-left:8px"></i>음봉(하락)</span>
       </div>
       <div id="price-chart" class="price-chart"></div>
+      <div class="levels-row" id="levels-row">
+        <span class="lv-item lv-support">지지 <b id="lv-support">-</b></span>
+        <span class="lv-item lv-resistance">저항 <b id="lv-resistance">-</b></span>
+        <span class="lv-hint">최근 스윙 고·저점 기준</span>
+      </div>
 
       <div class="indicator-block">
         <h3>주요 지표 요약</h3>
@@ -159,6 +172,30 @@
             <div class="qm-interp" id="fscore-interp"></div>
           </div>
         </div>
+      </div>
+
+      <div class="dividend-block" id="dividend-block">
+        <h3 class="section-sub-title">배당 <span class="info-dot" title="배당수익률=주당배당금÷현재주가. 배당성향=순이익 중 배당으로 나눈 비율. DART 사업보고서 배당공시 기준(최근 확정 사업연도).">ⓘ</span></h3>
+        <div class="div-tiles" id="div-tiles">
+          <div class="div-tile">
+            <div class="div-tile-label">배당수익률</div>
+            <div class="div-tile-value" id="div-yield">-</div>
+          </div>
+          <div class="div-tile">
+            <div class="div-tile-label">배당성향</div>
+            <div class="div-tile-value" id="div-payout">-</div>
+          </div>
+          <div class="div-tile">
+            <div class="div-tile-label">주당배당금</div>
+            <div class="div-tile-value" id="div-dps">-</div>
+          </div>
+        </div>
+        <div class="div-none" id="div-none" hidden>최근 확정 사업연도 기준 배당 실시 이력이 없습니다(무배당).</div>
+      </div>
+
+      <div class="trend-block" id="trend-block">
+        <h3 class="section-sub-title">실적·마진 추이 <span class="info-dot" title="최근 사업연도별 매출·영업이익률·순이익률. 숫자 하나가 아니라 '개선 중인가 악화 중인가' 추세를 봅니다.">ⓘ</span></h3>
+        <table class="trend-table" id="trend-table"></table>
       </div>
 
       <h3 class="section-sub-title" id="fund-table-title">주요 재무 지표</h3>

@@ -31,6 +31,7 @@ python3 .claude/skills/technical-indicator-calculator/scripts/compute_indicators
 - `volume`: 최신 거래량, 20일 평균, 평균 대비 비율, `abnormally_low`(30% 미만 여부)
 - `candles.recent`: 최근 3봉의 양봉/음봉·패턴(도지/장대양봉·음봉/상승·하락장악형)
 - `risk`: 리스크 관리 표준 지표 — `annualized_volatility_pct`(연율화 변동성), `max_drawdown_pct`(최대낙폭), `week52_high`/`week52_low`/`week52_position_pct`(52주 밴드 위치), `period_return_pct`(확보구간 누적수익률). **점수화하지 않는 참고 수치** — 근거는 `docs/reference/valuation-quality-risk-notes.md` 참조
+- `levels`: `support`/`resistance` — 최근 스윙 고·저점 기준 현재가와 가장 가까운 지지/저항 가격대(진입·이탈 참고용, 점수화 안 함)
 
 ## technical-analyst가 반드시 지킬 것
 

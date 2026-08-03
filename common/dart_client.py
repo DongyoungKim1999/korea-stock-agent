@@ -8,8 +8,15 @@ import zipfile
 
 import requests
 
+from common import cache
 from common.cache import cached_call
-from common.config import DART_API_KEY, TTL_CORP_CODE_MAP, TTL_FINANCIAL_STATEMENT, has_dart_key
+from common.config import (
+    DART_API_KEY,
+    TTL_CORP_CODE_MAP,
+    TTL_FILED_STATEMENT,
+    TTL_FINANCIAL_STATEMENT,
+    has_dart_key,
+)
 from common.retry import retry_with_backoff
 
 BASE_URL = "https://opendart.fss.or.kr/api"
@@ -111,16 +118,32 @@ def _recent_report_periods(today: dt.date | None = None, count: int = 6) -> list
     return filtered[:count]
 
 
+def _fetch_statement(corp_code: str, bsns_year: str, reprt_code: str, fs_div: str) -> dict:
+    """단일 (기업/연도/보고서/연결구분) 재무제표 조회. 확정 공시분(status 000 + list)만 길게 캐시한다.
+
+    확정 재무제표는 불변이라 한 번 받으면 재조회할 필요가 없다 — 실행 간 캐시 영구보존(actions/cache)과
+    결합하면 계산 로직만 바꾸는 수정 시 DART를 거의 호출하지 않는다. 반면 '아직 미제출(013)'이나 빈
+    응답은 캐시하지 않아, 이후 실제로 공시되면 곧바로 반영된다."""
+    key = f"dart_fs_{corp_code}_{bsns_year}_{reprt_code}_{fs_div}"
+    cached = cache.read(key, TTL_FILED_STATEMENT)
+    if cached is not None:
+        return cached
+    payload = _get_json(
+        "fnlttSinglAcntAll.json",
+        {"corp_code": corp_code, "bsns_year": bsns_year, "reprt_code": reprt_code, "fs_div": fs_div},
+    )
+    if payload.get("status") == "000" and payload.get("list"):
+        cache.write(key, payload)  # 확정 공시분만 영구 캐시
+    return payload
+
+
 def get_recent_financial_statements(corp_code: str, periods_needed: int = 4) -> list[dict]:
     """최근 N개 분기의 전체 재무제표 원자료. 연결(CFS) 우선, 없으면 별도(OFS)로 재시도."""
     results = []
     for bsns_year, reprt_code in _recent_report_periods(count=periods_needed + 3):
         period_data = None
         for fs_div in ("CFS", "OFS"):
-            payload = _get_json(
-                "fnlttSinglAcntAll.json",
-                {"corp_code": corp_code, "bsns_year": bsns_year, "reprt_code": reprt_code, "fs_div": fs_div},
-            )
+            payload = _fetch_statement(corp_code, bsns_year, reprt_code, fs_div)
             if payload.get("status") == "000" and payload.get("list"):
                 period_data = {
                     "bsns_year": bsns_year,
@@ -133,6 +156,75 @@ def get_recent_financial_statements(corp_code: str, periods_needed: int = 4) -> 
             results.append(period_data)
         if len(results) >= periods_needed:
             break
+    return results
+
+
+def _to_num(text) -> float | None:
+    """DART 텍스트 금액(콤마·'-' 포함)을 float으로. 배당 미실시('-')는 None."""
+    if text is None:
+        return None
+    s = str(text).replace(",", "").strip()
+    if s in ("", "-"):
+        return None
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
+def get_dividend_info(corp_code: str, bsns_year: str) -> dict | None:
+    """해당 사업연도 배당 정보(주당현금배당금·현금배당성향·시가배당률). 배당 미실시/미제출이면 None.
+
+    확정 공시분(불변)만 길게 캐시한다 — 계산 로직 수정 시 재호출을 없앤다.
+    DART alotMatter.json(배당에 관한 사항)은 사업보고서(11011)에 담긴다."""
+    key = f"dart_dividend_{corp_code}_{bsns_year}"
+    cached = cache.read(key, TTL_FILED_STATEMENT)
+    if cached is not None:
+        return cached or None  # 빈 dict({})는 '배당없음 확정'으로 캐시된 것
+    try:
+        payload = _get_json(
+            "alotMatter.json",
+            {"corp_code": corp_code, "bsns_year": bsns_year, "reprt_code": REPRT_ANNUAL},
+        )
+    except DartApiError:
+        return None
+    if payload.get("status") != "000" or not payload.get("list"):
+        return None
+
+    dps = payout = div_yield = None
+    for row in payload["list"]:
+        se = (row.get("se") or "").replace(" ", "")
+        stock_knd = (row.get("stock_knd") or "")
+        val = _to_num(row.get("thstrm"))
+        # 보통주 기준 우선(우선주 행이 섞여 나오면 보통주만)
+        if "주당현금배당금" in se and (not stock_knd or "보통" in stock_knd) and dps is None:
+            dps = val
+        elif "현금배당성향" in se and payout is None:
+            payout = val
+        elif ("현금배당수익률" in se or "시가배당" in se) and (not stock_knd or "보통" in stock_knd) and div_yield is None:
+            div_yield = val
+
+    result = {"dps": dps, "payout_pct": payout, "reported_yield_pct": div_yield}
+    # 배당 관련 값이 하나도 없으면 실질 무배당 → 빈 dict로 캐시(다음엔 재호출 안 함)
+    cache.write(key, result if any(v is not None for v in result.values()) else {})
+    return result if any(v is not None for v in result.values()) else None
+
+
+def get_annual_statements(corp_code: str, years: int = 4) -> list[dict]:
+    """최근 N개 '사업연도(연간)' 재무제표를 최신연도부터 반환 — 매출/이익/마진 추이용.
+
+    확정 공시분만 캐시하는 _fetch_statement를 재사용하므로 실행 간 재호출이 최소화된다."""
+    results: list[dict] = []
+    year = dt.date.today().year - 1  # 최근 확정 사업연도 후보(사업보고서는 익년 3월말 제출)
+    attempts = 0
+    while len(results) < years and attempts < years + 3:
+        for fs_div in ("CFS", "OFS"):
+            payload = _fetch_statement(corp_code, str(year), REPRT_ANNUAL, fs_div)
+            if payload.get("status") == "000" and payload.get("list"):
+                results.append({"bsns_year": str(year), "accounts": payload["list"]})
+                break
+        year -= 1
+        attempts += 1
     return results
 
 
