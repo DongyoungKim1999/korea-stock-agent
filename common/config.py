@@ -42,6 +42,9 @@ NAVER_CLIENT_SECRET = os.environ.get("NAVER_CLIENT_SECRET", "")
 
 # 캐시 TTL (초 단위)
 TTL_PRICE_DATA = 6 * 3600           # 시세: 하루 중 여러 번 요청해도 6시간은 재사용
+# OHLCV 시계열: 과거 구간은 사실상 불변이라 길게 캐시하고, 매 실행 최근 구간만 델타 조회해 병합한다
+# (증분 조회). 실행 간 캐시 영구보존(actions/cache)과 결합해 300일 전체 재조회를 없앤다.
+TTL_OHLCV_SERIES = 45 * 24 * 3600
 TTL_CORP_CODE_MAP = 30 * 24 * 3600  # DART corpCode 매핑: 한 달
 TTL_FINANCIAL_STATEMENT = 24 * 3600 # 기업개황 등: 하루
 # 확정 공시된 재무제표(fnlttSinglAcntAll)는 사실상 불변이라 길게 캐시한다 — 새 분기는 다른 캐시키라

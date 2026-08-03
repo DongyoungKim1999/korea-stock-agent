@@ -8,6 +8,8 @@ import datetime as dt
 import pandas as pd
 from pykrx import stock
 
+from common import cache
+from common.config import TTL_OHLCV_SERIES
 from common.retry import retry_with_backoff
 
 REFERENCE_TICKER = "005930"  # 삼성전자: 상장폐지/거래정지 위험이 사실상 없어 '최근 영업일' 판별 기준으로 사용
@@ -48,13 +50,74 @@ def get_latest_trading_date(today: dt.date | None = None) -> str:
         raise RuntimeError("최근 영업일 조회 실패 (개별종목/지수 조회 모두 실패)") from exc
 
 
+def _df_to_rows(df: pd.DataFrame) -> list[dict]:
+    rows = []
+    for idx, row in df.iterrows():
+        rec = {"date": pd.Timestamp(idx).strftime("%Y%m%d")}
+        for col, val in row.items():
+            rec[col] = None if pd.isna(val) else float(val)
+        rows.append(rec)
+    return rows
+
+
+def _rows_to_df(rows: list[dict]) -> pd.DataFrame:
+    df = pd.DataFrame(rows)
+    df.index = pd.to_datetime(df["date"], format="%Y%m%d")
+    return df.drop(columns=["date"]).sort_index()
+
+
+# 증분 조회 시 겹쳐 받는 최근 구간(거래일이 아니라 달력일 기준 넉넉히). 최근 수정·정정도 자가치유한다.
+_INCREMENTAL_OVERLAP_DAYS = 40
+_SPLIT_TOLERANCE = 0.02  # 겹치는 날 종가가 2% 넘게 다르면 액면분할/수정 의심 → 전체 재조회
+
+
 def get_ohlcv(code: str, trading_days: int = 120, end_date: str | None = None) -> pd.DataFrame:
-    """종목의 최근 N 거래일 OHLCV(+거래량, 등락률)를 날짜 오름차순으로 반환."""
+    """종목의 최근 N 거래일 OHLCV(+거래량, 등락률)를 날짜 오름차순으로 반환.
+
+    증분 캐싱: 캐시된 시계열이 있으면 최근 구간만 델타 조회해 병합한다(300일 전체 재조회 회피).
+    겹치는 날의 종가가 캐시와 크게 다르면(액면분할/수정) 과거가격이 어긋나므로 전체를 다시 받는다.
+    end_date가 지정된 경우(과거 시점 조회)는 캐싱하지 않고 그대로 조회한다.
+    """
     todate = end_date or get_latest_trading_date()
     calendar_buffer = int(trading_days * 1.6) + 15  # 주말/공휴일 감안 여유분
-    fromdate = _yyyymmdd(dt.datetime.strptime(todate, "%Y%m%d").date() - dt.timedelta(days=calendar_buffer))
-    df = _fetch_ohlcv_by_date(fromdate, todate, code)
-    df = df.sort_index()
+    full_from = _yyyymmdd(dt.datetime.strptime(todate, "%Y%m%d").date() - dt.timedelta(days=calendar_buffer))
+    cache_key = f"ohlcv_{code}"
+
+    if end_date is None:
+        cached_rows = cache.read(cache_key, TTL_OHLCV_SERIES)
+        if cached_rows:
+            try:
+                cached_df = _rows_to_df(cached_rows)
+            except Exception:
+                cached_df = None
+            if cached_df is not None and len(cached_df):
+                last_cached = cached_df.index[-1].date()
+                today_d = dt.datetime.strptime(todate, "%Y%m%d").date()
+                # 캐시가 지나치게 오래되지 않았을 때만 증분(오래됐으면 전체 재조회가 안전)
+                if 0 <= (today_d - last_cached).days <= 20:
+                    overlap_from = _yyyymmdd(last_cached - dt.timedelta(days=_INCREMENTAL_OVERLAP_DAYS))
+                    try:
+                        recent = _fetch_ohlcv_by_date(overlap_from, todate, code).sort_index()
+                    except Exception:
+                        recent = None
+                    if recent is not None and len(recent):
+                        overlap = cached_df.index.intersection(recent.index)
+                        split = False
+                        if len(overlap):
+                            d0 = overlap[0]
+                            c_old, c_new = cached_df.loc[d0, "종가"], recent.loc[d0, "종가"]
+                            if c_old and abs(c_new - c_old) / abs(c_old) > _SPLIT_TOLERANCE:
+                                split = True  # 액면분할/수정 → 병합 대신 전체 재조회
+                        if not split:
+                            # recent(최근 구간) 우선, 없는 과거 날짜는 cached로 채움 → 300일 전체 재조회 회피
+                            merged = recent.combine_first(cached_df).sort_index()
+                            cache.write(cache_key, _df_to_rows(merged))
+                            return merged.tail(trading_days)
+
+    # 캐시 없음/오래됨/분할감지/과거조회 → 전체 조회
+    df = _fetch_ohlcv_by_date(full_from, todate, code).sort_index()
+    if end_date is None:
+        cache.write(cache_key, _df_to_rows(df))
     return df.tail(trading_days)
 
 

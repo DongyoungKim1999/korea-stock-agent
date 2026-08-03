@@ -69,6 +69,11 @@ Claude Code 에이전트(위 기능들)는 LLM이 매번 직접 판단하지만,
   - **실적·마진 추이**: 최근 4년 매출·영업이익률·순이익률 흐름 — 개선/악화 추세
   - **지지·저항선**: 차트에 진입/이탈 참고 가격대 표시
   - **종합 투자 요약**: 위 축들을 통합한 한 줄 특성 진단(매수·매도 권유 아님)
+- **라이브 시세**(전종목): 종목을 열면 상단에 실시간 현재가·등락률·시가총액·외국인소진율·**목표주가
+  컨센서스**가 뜨고 장중 자동 갱신된다. 심층분석 120종목뿐 아니라 **검색되는 모든 종목**에 표시.
+  네이버 포털 데이터를 Cloudflare Worker(`/quote`)로 중계 — KRX가 클라우드에서 막는 시총·수급·
+  컨센서스를 우회로 확보. Worker 미배포 시 시세만 안 뜨고 나머지는 정상(무해한 저하). 설정은
+  [cloudflare-worker/README.md](cloudflare-worker/README.md) 참고
 
   밸류에이션/재무건전성/리스크의 방법론 근거·한계는
   [docs/reference/valuation-quality-risk-notes.md](docs/reference/valuation-quality-risk-notes.md)

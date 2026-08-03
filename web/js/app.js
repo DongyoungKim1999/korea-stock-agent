@@ -467,11 +467,12 @@ function renderTrend(trend) {
 function renderSummaryStrip(code) {
   const strip = document.getElementById("summary-strip");
   if (!code) { strip.hidden = true; return; }
+  // 비워치리스트(심층분석 미지원) 종목도 strip은 띄운다 — 라이브 시세/컨센서스는 전종목 제공.
+  strip.hidden = false;
   const tech = state.techCache[code];
   const fund = state.fundCache[code];
   const okT = tech && tech.status === "ok";
   const okF = fund && fund.status === "ok";
-  if (!okT && !okF) { strip.hidden = true; return; }
 
   const tags = [];
   // 밸류에이션
@@ -509,12 +510,14 @@ function renderSummaryStrip(code) {
     else if (risk.week52_position_pct >= 90) tags.push({ t: "52주 고점권", c: "warn" });
   }
 
-  const name = (state.watchlist.find((w) => w.code === code) || {}).name || code;
-  document.getElementById("ss-name").textContent = `${name} 종합`;
+  const hasAnalysis = okT || okF;
+  document.getElementById("ss-name").textContent = `${stockName(code)} 종합`;
   document.getElementById("ss-tags").innerHTML = tags.length
     ? tags.map((x) => `<span class="ss-tag ss-${x.c}">${x.t}</span>`).join("")
-    : `<span class="ss-tag">특이 신호 없음</span>`;
-  document.getElementById("ss-oneliner").textContent = buildOneliner(tags);
+    : (hasAnalysis ? `<span class="ss-tag">특이 신호 없음</span>` : "");
+  document.getElementById("ss-oneliner").textContent = hasAnalysis
+    ? buildOneliner(tags)
+    : "심층분석 미지원 종목입니다 — 아래 라이브 시세·목표주가 컨센서스는 제공됩니다.";
   strip.hidden = false;
 }
 
@@ -533,16 +536,102 @@ function buildOneliner(tags) {
   return `${body}. (투자 판단·책임은 본인에게 있으며, 매수·매도 권유가 아닌 특성 요약입니다.)`;
 }
 
+// ---------- 라이브 시세 (Worker /quote 프록시, 네이버 포털) ----------
+
+let _quoteTimer = null;
+
+function stockName(code) {
+  const w = state.watchlist.find((x) => x.code === code);
+  if (w) return w.name;
+  const c = state.companyIndex.find((x) => x.code === code);
+  return c ? c.name : code;
+}
+
+function recommLabel(mean) {
+  // 네이버 컨센서스: 1(매도)~5(매수). 높을수록 매수 우위.
+  if (mean == null) return null;
+  if (mean >= 4.5) return "강력매수";
+  if (mean >= 3.5) return "매수";
+  if (mean >= 2.5) return "중립";
+  if (mean >= 1.5) return "매도";
+  return "강력매도";
+}
+
+async function fetchQuote(code) {
+  const url = typeof quoteUrl === "function" ? quoteUrl(code) : null;
+  if (!url) return null;
+  try {
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) return null;
+    const d = await res.json();
+    return d && !d.error ? d : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function renderQuote(q) {
+  const qEl = document.getElementById("ss-quote");
+  const cEl = document.getElementById("ss-consensus");
+  if (!q || q.price == null) {
+    qEl.innerHTML = "";
+    cEl.hidden = true;
+    return;
+  }
+  // 등락 색: 한국 관례(상승=빨강, 하락=파랑)
+  const up = q.change_pct > 0, down = q.change_pct < 0;
+  const color = up ? "var(--candle-up)" : down ? "var(--candle-down)" : "var(--text-secondary)";
+  const arrow = up ? "▲" : down ? "▼" : "–";
+  const sign = q.change_pct > 0 ? "+" : "";
+  const status = q.market_open ? '<span class="ss-live">● 장중</span>' : '<span class="ss-closed">장마감</span>';
+  qEl.innerHTML = `<b class="ss-price">${Math.round(q.price).toLocaleString("ko-KR")}</b>` +
+    `<span class="ss-chg" style="color:${color}">${arrow} ${sign}${(q.change_pct ?? 0).toFixed(2)}%</span>${status}`;
+
+  const bits = [];
+  if (q.target_price != null && q.price) {
+    const upside = (q.target_price / q.price - 1) * 100;
+    const uc = upside >= 0 ? "var(--good)" : "var(--critical)";
+    bits.push(`목표주가 <b>${Math.round(q.target_price).toLocaleString("ko-KR")}</b> <span style="color:${uc}">(${upside >= 0 ? "+" : ""}${upside.toFixed(0)}%)</span>`);
+  }
+  const rl = recommLabel(q.recomm_mean);
+  if (rl) bits.push(`투자의견 <b>${rl}</b> (${q.recomm_mean.toFixed(1)})`);
+  if (q.market_cap_text) bits.push(`시총 ${q.market_cap_text}`);
+  if (q.foreign_rate) bits.push(`외인 ${q.foreign_rate}`);
+  cEl.innerHTML = bits.join(" · ") + (bits.length ? ' <span class="ss-src">· 네이버 포털 기준</span>' : "");
+  cEl.hidden = bits.length === 0;
+}
+
+async function refreshQuote(code) {
+  if (state.currentCode !== code) return; // 종목이 바뀌었으면 무시(경쟁 방지)
+  const q = await fetchQuote(code);
+  if (state.currentCode !== code) return;
+  renderQuote(q);
+  // 종합요약 이름을 라이브 데이터로 보정(비워치리스트 종목 등)
+  if (q && q.name) document.getElementById("ss-name").textContent = `${q.name} 종합`;
+}
+
+function startQuoteAutoRefresh(code) {
+  if (_quoteTimer) { clearInterval(_quoteTimer); _quoteTimer = null; }
+  renderQuote(null); // 이전 종목 시세 지우기
+  refreshQuote(code); // 즉시 1회
+  // 장중에는 60초마다 갱신(장마감이면 자동갱신 불필요)
+  _quoteTimer = setInterval(() => {
+    if (state.currentCode !== code) { clearInterval(_quoteTimer); _quoteTimer = null; return; }
+    refreshQuote(code);
+  }, 60000);
+}
+
 // ---------- select stock ----------
 
 async function selectStock(code) {
   state.currentCode = code;
   renderResultList(state.lastRenderedItems.length ? state.lastRenderedItems : state.watchlist);
+  startQuoteAutoRefresh(code); // 라이브 시세는 전종목 대상(심층분석 지원 여부와 무관)
 
   if (!state.watchlistCodes.has(code)) {
     renderTechnical({ status: "unsupported" });
     renderFundamental({ status: "unsupported" });
-    renderSummaryStrip(null);
+    renderSummaryStrip(code); // 미지원 종목도 strip(이름+라이브 시세)은 표시
     return;
   }
 

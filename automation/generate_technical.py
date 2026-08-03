@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import _skill_imports  # noqa: F401  (sys.path 부트스트랩)
@@ -16,6 +17,7 @@ from watchlist import WATCHLIST
 
 WEB_DATA_DIR = Path(__file__).resolve().parents[1] / "web" / "data" / "technical"
 CHART_DAYS = 300
+MAX_WORKERS = 6  # OHLCV 개별 조회는 I/O 대기라 동시 처리로 단축
 
 
 def generate_one(entry: dict) -> dict:
@@ -43,19 +45,25 @@ def generate_one(entry: dict) -> dict:
     }
 
 
+def _safe_generate(entry: dict) -> dict:
+    try:
+        return generate_one(entry)
+    except Exception as exc:  # 종목 하나 실패가 전체를 막지 않도록
+        return {"status": "error", "code": entry["code"], "name": entry["name"], "reason": str(exc)}
+
+
 def main() -> None:
     WEB_DATA_DIR.mkdir(parents=True, exist_ok=True)
     summary = []
-    for entry in WATCHLIST:
-        print(f"[technical] {entry['code']} {entry['name']} 처리 중...", file=sys.stderr)
-        try:
-            result = generate_one(entry)
-        except Exception as exc:  # 종목 하나 실패가 전체를 막지 않도록
-            result = {"status": "error", "code": entry["code"], "name": entry["name"], "reason": str(exc)}
-
-        out_path = WEB_DATA_DIR / f"{entry['code']}.json"
-        out_path.write_text(json.dumps(result, ensure_ascii=False, default=str), encoding="utf-8")
-        summary.append({"code": entry["code"], "name": entry["name"], "status": result["status"], "score": result.get("score")})
+    print(f"[technical] 처리 중(동시 {MAX_WORKERS}개)...", file=sys.stderr)
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as ex:
+        futures = {ex.submit(_safe_generate, entry): entry for entry in WATCHLIST}
+        for fut in as_completed(futures):
+            entry = futures[fut]
+            result = fut.result()
+            out_path = WEB_DATA_DIR / f"{entry['code']}.json"
+            out_path.write_text(json.dumps(result, ensure_ascii=False, default=str), encoding="utf-8")
+            summary.append({"code": entry["code"], "name": entry["name"], "status": result["status"], "score": result.get("score")})
 
     ok = sum(1 for s in summary if s["status"] == "ok")
     print(f"[technical] 완료: {ok}/{len(summary)} 성공", file=sys.stderr)

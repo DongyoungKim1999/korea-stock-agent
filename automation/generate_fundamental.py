@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import sys
 import tempfile
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from pykrx import stock
@@ -29,6 +30,9 @@ WEB_DATA_DIR = Path(__file__).resolve().parents[1] / "web" / "data" / "fundament
 TECHNICAL_DIR = Path(__file__).resolve().parents[1] / "web" / "data" / "technical"
 MAX_PEERS = 15
 MIN_PEERS = 5
+# DART/네이버 호출은 I/O 대기가 대부분이라 동시 조회로 크게 단축된다. DART 일일한도(2만)·서버 부담을
+# 감안해 과하지 않은 수준(6)으로 둔다. 파일 캐시(common/cache)는 키가 종목별로 달라 동시쓰기 안전.
+MAX_WORKERS = 6
 
 
 def read_latest_close(code: str) -> float | None:
@@ -217,32 +221,43 @@ def main() -> None:
     with tempfile.TemporaryDirectory(prefix="fundamental_gen_") as tmp:
         tmp_dir = Path(tmp)
 
-        # 1단계: 워치리스트 전체를 먼저 받아둔다 — 이 결과를 서로의 피어로 재활용하기 위함.
+        # 1단계: 워치리스트 전체 재무데이터를 동시에 받아둔다(서로의 피어로 재활용). I/O 대기가
+        # 대부분이라 병렬화로 크게 단축된다.
         fetched: dict[str, dict] = {}
-        for entry in WATCHLIST:
-            print(f"[fundamental] {entry['code']} {entry['name']} 재무데이터 수집 중...", file=sys.stderr)
-            try:
-                fetched[entry["code"]] = fetch_financials.fetch(entry["code"], periods=4)
-            except Exception as exc:
-                fetched[entry["code"]] = {"status": "error", "reason": str(exc)}
-            p = tmp_dir / f"{entry['code']}_target.json"
-            p.write_text(json.dumps(fetched[entry["code"]], ensure_ascii=False, default=str), encoding="utf-8")
 
-        # 2단계: 업종분류를 한 번만 받아오고(종목별 재호출 없음), 종목별 비율 계산
+        def _fetch_one(entry: dict) -> tuple[str, dict]:
+            try:
+                return entry["code"], fetch_financials.fetch(entry["code"], periods=4)
+            except Exception as exc:
+                return entry["code"], {"status": "error", "reason": str(exc)}
+
+        print(f"[fundamental] 재무데이터 수집 중(동시 {MAX_WORKERS}개)...", file=sys.stderr)
+        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as ex:
+            for code, data in ex.map(_fetch_one, WATCHLIST):
+                fetched[code] = data
+                (tmp_dir / f"{code}_target.json").write_text(
+                    json.dumps(data, ensure_ascii=False, default=str), encoding="utf-8")
+
+        # 2단계: 업종분류를 한 번만 받아오고(종목별 재호출 없음), 종목별 비율/배당/추이를 동시 계산
         print("[fundamental] 업종분류 조회 중(KOSPI/KOSDAQ 각 1회)...", file=sys.stderr)
         sector_dfs = fetch_sector_classifications(latest_date)
         print(f"[fundamental] 업종분류 확보: {list(sector_dfs.keys()) or '없음(워치리스트 재활용으로 진행)'}", file=sys.stderr)
 
-        for entry in WATCHLIST:
-            print(f"[fundamental] {entry['code']} {entry['name']} 비율 계산 중...", file=sys.stderr)
+        def _process_one(entry: dict) -> dict:
             try:
-                result = generate_one(entry, sector_dfs, fetched, tmp_dir)
+                return generate_one(entry, sector_dfs, fetched, tmp_dir)
             except Exception as exc:
-                result = {"status": "error", "code": entry["code"], "name": entry["name"], "reason": str(exc)}
+                return {"status": "error", "code": entry["code"], "name": entry["name"], "reason": str(exc)}
 
-            out_path = WEB_DATA_DIR / f"{entry['code']}.json"
-            out_path.write_text(json.dumps(result, ensure_ascii=False, default=str), encoding="utf-8")
-            summary.append({"code": entry["code"], "name": entry["name"], "status": result["status"]})
+        print(f"[fundamental] 종목별 계산 중(동시 {MAX_WORKERS}개)...", file=sys.stderr)
+        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as ex:
+            futures = {ex.submit(_process_one, entry): entry for entry in WATCHLIST}
+            for fut in as_completed(futures):
+                entry = futures[fut]
+                result = fut.result()
+                out_path = WEB_DATA_DIR / f"{entry['code']}.json"
+                out_path.write_text(json.dumps(result, ensure_ascii=False, default=str), encoding="utf-8")
+                summary.append({"code": entry["code"], "name": entry["name"], "status": result["status"]})
 
     ok = sum(1 for s in summary if s["status"] == "ok")
     print(f"[fundamental] 완료: {ok}/{len(summary)} 성공", file=sys.stderr)

@@ -39,7 +39,7 @@ function corsHeaders(origin) {
   const allow = origin === ALLOWED_ORIGIN ? origin : ALLOWED_ORIGIN;
   return {
     "Access-Control-Allow-Origin": allow,
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type",
     "Access-Control-Max-Age": "86400",
   };
@@ -52,15 +52,92 @@ function jsonResponse(body, status, origin) {
   });
 }
 
+// "239,500" 같은 문자열 → 239500 (콤마 제거). 실패 시 null.
+function num(text) {
+  if (text == null) return null;
+  const n = parseFloat(String(text).replace(/,/g, ""));
+  return Number.isFinite(n) ? n : null;
+}
+
+function isKrxMarketOpen() {
+  // 현재 KST 기준 평일 09:00~15:30이면 장중으로 간주(공휴일까지는 판별 안 함 — 참고용)
+  const kst = new Date(Date.now() + 9 * 3600 * 1000);
+  const day = kst.getUTCDay(); // 0=일,6=토
+  if (day === 0 || day === 6) return false;
+  const mins = kst.getUTCHours() * 60 + kst.getUTCMinutes();
+  return mins >= 540 && mins <= 930;
+}
+
+// 네이버 포털 시세/지표를 프록시한다. KRX가 클라우드 IP에서 막는 실시간가·시총·컨센서스를
+// 개별 종목 단위로 확보 — 브라우저는 CORS 때문에 직접 못 부르므로 Worker가 중계한다.
+async function handleQuote(code, origin) {
+  if (!/^\d{6}$/.test(code || "")) {
+    return jsonResponse({ error: "종목코드(6자리 숫자)가 필요합니다" }, 400, origin);
+  }
+  const headers = { "User-Agent": "Mozilla/5.0" };
+  const [pollRes, integRes] = await Promise.allSettled([
+    fetch(`https://polling.finance.naver.com/api/realtime/domestic/stock/${code}`, { headers }),
+    fetch(`https://m.stock.naver.com/api/stock/${code}/integration`, { headers }),
+  ]);
+
+  const out = { code, source: "naver", market_open: isKrxMarketOpen(), updated_at: new Date().toISOString() };
+
+  try {
+    if (pollRes.status === "fulfilled" && pollRes.value.ok) {
+      const d = (await pollRes.value.json())?.datas?.[0];
+      if (d) {
+        out.name = d.stockName;
+        out.price = num(d.closePrice);
+        out.change = num(d.compareToPreviousClosePrice);
+        out.change_pct = num(d.fluctuationsRatio);
+        out.direction = d.compareToPreviousPrice?.name || null; // RISING/FALLING/STEADY
+      }
+    }
+  } catch (_) {}
+
+  try {
+    if (integRes.status === "fulfilled" && integRes.value.ok) {
+      const g = await integRes.value.json();
+      if (!out.name) out.name = g.stockName;
+      const infos = {};
+      for (const it of g.totalInfos || []) infos[it.code] = it.value;
+      out.market_cap_text = infos.marketValue || null;
+      out.foreign_rate = infos.foreignRate || null;
+      out.per = infos.per || null;
+      out.eps = infos.eps || null;
+      out.week52_high = num(infos.highPriceOf52Weeks);
+      out.week52_low = num(infos.lowPriceOf52Weeks);
+      const c = g.consensusInfo;
+      if (c) {
+        out.target_price = num(c.priceTargetMean);
+        out.recomm_mean = num(c.recommMean); // 1(강력매도)~5(강력매수)
+        out.consensus_date = c.createDate || null;
+      }
+    }
+  } catch (_) {}
+
+  if (out.price == null && out.market_cap_text == null) {
+    return jsonResponse({ error: "시세를 가져오지 못했습니다(종목코드 확인)", code }, 502, origin);
+  }
+  return jsonResponse(out, 200, origin);
+}
+
 export default {
   async fetch(request, env) {
     const origin = request.headers.get("Origin") || "";
+    const url = new URL(request.url);
 
     if (request.method === "OPTIONS") {
       return new Response(null, { status: 204, headers: corsHeaders(origin) });
     }
+
+    // GET /quote?code=XXXXXX — 라이브 시세/시총/컨센서스 (인증 불필요, 공개 포털 데이터)
+    if (request.method === "GET" && url.pathname.replace(/\/+$/, "").endsWith("/quote")) {
+      return handleQuote(url.searchParams.get("code"), origin);
+    }
+
     if (request.method !== "POST") {
-      return jsonResponse({ error: "POST만 지원합니다" }, 405, origin);
+      return jsonResponse({ error: "POST만 지원합니다 (시세는 GET /quote?code=)" }, 405, origin);
     }
     if (!env.OPENAI_API_KEY) {
       return jsonResponse({ error: "서버에 OPENAI_API_KEY가 설정되지 않았습니다 (wrangler secret put OPENAI_API_KEY)" }, 500, origin);
