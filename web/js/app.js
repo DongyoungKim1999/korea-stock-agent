@@ -232,7 +232,47 @@ function renderTechnical(data) {
 
   renderRisk(ind.risk);
   renderLevels(ind.levels, ind.latest_close);
+  renderRiskReward(data.code); // 지지선 확보 — 목표주가(라이브)와 합쳐 손익비 산출
   warnEl.textContent = humanizeWarnings(data.warnings);
+}
+
+// ---------- 손익비 (Risk/Reward): 목표주가(컨센서스) vs 지지선 ----------
+
+function renderRiskReward(code) {
+  const block = document.getElementById("rr-block");
+  const tech = state.techCache[code];
+  const q = state.currentQuote;
+  const support = tech && tech.status === "ok" && tech.indicators.levels ? tech.indicators.levels.support : null;
+  const target = q && q.target_price != null ? q.target_price : null;
+  const price = (q && q.price != null) ? q.price
+    : (tech && tech.status === "ok" ? tech.indicators.latest_close : null);
+
+  // 손익비가 의미 있으려면 지지 < 현재가 < 목표 여야 한다(아니면 이미 목표 근접/지지 이탈 → 숨김)
+  if (support == null || target == null || price == null || !(support < price && price < target)) {
+    block.hidden = true;
+    return;
+  }
+  const upside = (target - price) / price * 100;
+  const downside = (price - support) / price * 100;
+  const rr = (target - price) / (price - support);
+  const total = target - support;
+  const curPos = (price - support) / total * 100;
+
+  document.getElementById("rr-fill-down").style.width = `${curPos}%`;
+  document.getElementById("rr-fill-up").style.width = `${100 - curPos}%`;
+  document.getElementById("rr-marker").style.left = `${curPos}%`;
+  const fmt = (v) => Math.round(v).toLocaleString("ko-KR");
+  document.getElementById("rr-support").textContent = fmt(support);
+  document.getElementById("rr-target").textContent = fmt(target);
+  document.getElementById("rr-current").textContent = fmt(price);
+
+  const verdict = rr >= 3 ? "매우 양호" : rr >= 2 ? "양호" : rr >= 1 ? "보통" : "불리";
+  const vc = rr >= 2 ? "var(--good)" : rr >= 1 ? "var(--warning)" : "var(--critical)";
+  document.getElementById("rr-verdict").innerHTML =
+    `상승여력 <b style="color:var(--good)">+${upside.toFixed(0)}%</b> · ` +
+    `하락위험 <b style="color:var(--critical)">-${downside.toFixed(0)}%</b> · ` +
+    `손익비 <b style="color:${vc}">${rr.toFixed(1)} : 1</b> <span style="color:${vc};font-weight:700">${verdict}</span>`;
+  block.hidden = false;
 }
 
 function renderLevels(levels, close) {
@@ -605,14 +645,18 @@ async function refreshQuote(code) {
   if (state.currentCode !== code) return; // 종목이 바뀌었으면 무시(경쟁 방지)
   const q = await fetchQuote(code);
   if (state.currentCode !== code) return;
+  state.currentQuote = q;
   renderQuote(q);
+  renderRiskReward(code); // 목표주가가 들어왔으니 손익비 갱신
   // 종합요약 이름을 라이브 데이터로 보정(비워치리스트 종목 등)
   if (q && q.name) document.getElementById("ss-name").textContent = `${q.name} 종합`;
 }
 
 function startQuoteAutoRefresh(code) {
   if (_quoteTimer) { clearInterval(_quoteTimer); _quoteTimer = null; }
+  state.currentQuote = null;
   renderQuote(null); // 이전 종목 시세 지우기
+  renderRiskReward(code);
   refreshQuote(code); // 즉시 1회
   // 장중에는 60초마다 갱신(장마감이면 자동갱신 불필요)
   _quoteTimer = setInterval(() => {

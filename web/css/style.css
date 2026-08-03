@@ -267,6 +267,18 @@ html, body {
 .lv-resistance b { color: var(--candle-up); }
 .lv-hint { color: var(--text-muted); font-size: 10px; margin-left: auto; }
 
+/* ---------- 손익비 (Risk/Reward) ---------- */
+.rr-block { margin-top: 16px; }
+.rr-bar { position: relative; height: 8px; border-radius: 4px; overflow: hidden; display: flex; margin: 4px 0 6px; }
+.rr-fill-down { height: 100%; background: rgba(229,72,77,.35); }   /* 지지→현재: 하락위험 구간 */
+.rr-fill-up { height: 100%; background: rgba(22,193,114,.40); }    /* 현재→목표: 상승여력 구간 */
+.rr-marker { position: absolute; top: -2px; width: 2px; height: 12px; background: var(--text-primary); transform: translateX(-1px); }
+.rr-ends { display: flex; justify-content: space-between; font-size: 10.5px; color: var(--text-muted); }
+.rr-ends b { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.rr-cur { color: var(--text-primary); font-weight: 700; font-variant-numeric: tabular-nums; }
+.rr-verdict { font-size: 12px; color: var(--text-secondary); margin-top: 7px; }
+.rr-verdict b { font-variant-numeric: tabular-nums; }
+
 /* ---------- 배당 (기본 패널) ---------- */
 .dividend-block { margin-bottom: 16px; }
 .div-tiles { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; }
