@@ -122,18 +122,56 @@ async function handleQuote(code, origin) {
   return jsonResponse(out, 200, origin);
 }
 
+// 네이버 일봉 차트(siseJson) 프록시 — 전종목 on-demand 기술분석용. KRX 전종목 조회가 클라우드에서
+// 막혀도 개별종목 차트는 네이버에서 받을 수 있어, 브라우저가 이걸로 지표를 즉석 계산한다.
+async function handleOhlcv(code, origin) {
+  if (!/^\d{6}$/.test(code || "")) {
+    return jsonResponse({ error: "종목코드(6자리 숫자)가 필요합니다" }, 400, origin);
+  }
+  const end = new Date(Date.now() + 9 * 3600 * 1000); // KST
+  const start = new Date(end.getTime() - 460 * 24 * 3600 * 1000); // ~300 거래일 확보용 여유
+  const fmt = (d) => d.toISOString().slice(0, 10).replace(/-/g, "");
+  const upstream = `https://api.finance.naver.com/siseJson.naver?symbol=${code}&requestType=1&startTime=${fmt(start)}&endTime=${fmt(end)}&timeframe=day`;
+  let text;
+  try {
+    const res = await fetch(upstream, { headers: { "User-Agent": "Mozilla/5.0", Referer: "https://finance.naver.com" } });
+    if (!res.ok) return jsonResponse({ error: `차트 조회 실패(${res.status})`, code }, 502, origin);
+    text = await res.text();
+  } catch (e) {
+    return jsonResponse({ error: "차트 조회 실패", code }, 502, origin);
+  }
+  // 응답은 [['날짜',...header], ["20260102", 시,고,저,종,거래량,외인율], ...] 형태(엄격 JSON 아님).
+  // 데이터 행만 정규식으로 뽑는다.
+  const rows = [];
+  const re = /\["(\d{8})",\s*(-?[\d.]+),\s*(-?[\d.]+),\s*(-?[\d.]+),\s*(-?[\d.]+),\s*(-?\d+)/g;
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    rows.push({
+      date: `${m[1].slice(0, 4)}-${m[1].slice(4, 6)}-${m[1].slice(6, 8)}`,
+      open: +m[2], high: +m[3], low: +m[4], close: +m[5], volume: +m[6],
+    });
+  }
+  if (rows.length < 20) return jsonResponse({ error: "차트 데이터 부족", code, rows: rows.length }, 502, origin);
+  return jsonResponse({ code, source: "naver", rows }, 200, origin);
+}
+
 export default {
   async fetch(request, env) {
     const origin = request.headers.get("Origin") || "";
     const url = new URL(request.url);
+    const path = url.pathname.replace(/\/+$/, "");
 
     if (request.method === "OPTIONS") {
       return new Response(null, { status: 204, headers: corsHeaders(origin) });
     }
 
     // GET /quote?code=XXXXXX — 라이브 시세/시총/컨센서스 (인증 불필요, 공개 포털 데이터)
-    if (request.method === "GET" && url.pathname.replace(/\/+$/, "").endsWith("/quote")) {
+    if (request.method === "GET" && path.endsWith("/quote")) {
       return handleQuote(url.searchParams.get("code"), origin);
+    }
+    // GET /ohlcv?code=XXXXXX — 일봉 차트 (전종목 on-demand 기술분석용)
+    if (request.method === "GET" && path.endsWith("/ohlcv")) {
+      return handleOhlcv(url.searchParams.get("code"), origin);
     }
 
     if (request.method !== "POST") {

@@ -13,3 +13,10 @@ function quoteUrl(code) {
   const base = GPT_WORKER_URL.replace(/\/+$/, "");
   return `${base}/quote?code=${encodeURIComponent(code)}`;
 }
+
+// Worker 기반 일봉 차트 URL (/ohlcv 라우트) — 전종목 on-demand 기술분석용.
+function ohlcvUrl(code) {
+  if (!GPT_WORKER_URL || !GPT_WORKER_URL.trim()) return null;
+  const base = GPT_WORKER_URL.replace(/\/+$/, "");
+  return `${base}/ohlcv?code=${encodeURIComponent(code)}`;
+}

@@ -102,7 +102,7 @@ function renderResultList(items) {
       : `<span class="r-tag r-tag-muted">상세분석 미지원</span>`;
     li.innerHTML = `
       <div class="r-title">${item.name} <span style="color:var(--text-muted);font-weight:400">${item.code}</span></div>
-      <div class="r-meta">${tag}</div>`;
+      <div class="r-meta">${tag}<span class="r-price" data-code="${item.code}"></span></div>`;
     li.onclick = () => selectStock(item.code);
     list.appendChild(li);
   }
@@ -112,6 +112,39 @@ function renderResultList(items) {
     more.textContent = `외 ${items.length - capped.length}개 더 있음 — 검색어를 구체적으로 입력하면 좁혀집니다`;
     list.appendChild(more);
   }
+  attachLivePreviews(list);
+}
+
+// 검색결과에 라이브 시세(현재가·등락)를 붙인다 — 화면에 보이는 항목만 지연 로딩(과도한 호출 방지).
+let _resultObserver = null;
+const RESULT_QUOTE_CAP = 40;
+
+function attachLivePreviews(list) {
+  if (typeof quoteUrl !== "function" || !quoteUrl("000000")) return; // Worker 미설정이면 미리보기 생략
+  state.quotePreviewCache = state.quotePreviewCache || {};
+  if (_resultObserver) { _resultObserver.disconnect(); _resultObserver = null; }
+  let loaded = 0;
+  _resultObserver = new IntersectionObserver((entries, obs) => {
+    for (const e of entries) {
+      if (!e.isIntersecting) continue;
+      obs.unobserve(e.target);
+      const span = e.target.querySelector(".r-price");
+      if (span && loaded < RESULT_QUOTE_CAP) { loaded++; fillPreview(span.dataset.code, span); }
+    }
+  }, { threshold: 0.1 });
+  list.querySelectorAll(".result-item").forEach((li) => _resultObserver.observe(li));
+}
+
+async function fillPreview(code, span) {
+  if (!span || !code) return;
+  const cache = state.quotePreviewCache;
+  const q = cache[code] !== undefined ? cache[code] : (cache[code] = await fetchQuote(code));
+  if (!q || q.price == null) return;
+  const up = q.change_pct > 0, down = q.change_pct < 0;
+  const c = up ? "var(--candle-up)" : down ? "var(--candle-down)" : "var(--text-muted)";
+  const arr = up ? "▲" : down ? "▼" : "–";
+  const cap = q.market_cap_text ? `<span class="r-cap">${q.market_cap_text}</span>` : "";
+  span.innerHTML = `${Math.round(q.price).toLocaleString("ko-KR")} <span style="color:${c}">${arr}${Math.abs(q.change_pct ?? 0).toFixed(1)}%</span>${cap}`;
 }
 
 function updateSearchSummary(filteredCount, query) {
@@ -345,7 +378,9 @@ function renderFundamental(data) {
     ids.forEach((id) => { document.getElementById(id).textContent = "-"; document.getElementById(id).style.color = ""; });
     document.getElementById("fin-table").innerHTML = "";
     document.getElementById("fund-summary-list").innerHTML =
-      data && data.status === "unsupported" ? '<li>상세분석 미지원 종목입니다.</li>' : "";
+      data && data.status === "unsupported"
+        ? '<li>재무 상세분석(DART 기반)은 우량주 120종목만 지원합니다. 이 종목은 기술적분석·시세·목표주가로 확인하세요.</li>'
+        : "";
     document.getElementById("fund-footnote").textContent = "";
     renderValuation(null);
     renderQuality(null);
@@ -667,15 +702,48 @@ function startQuoteAutoRefresh(code) {
 
 // ---------- select stock ----------
 
+// 워치리스트 밖 종목: 네이버 차트(Worker /ohlcv)를 받아 브라우저에서 지표를 즉석 계산 → 전종목 기술분석.
+async function loadOnDemandTechnical(code) {
+  if (state.techCache[code] && state.techCache[code].status === "ok") {
+    renderTechnical(state.techCache[code]); // 세션 내 재조회 방지
+    renderSummaryStrip(code);
+    return;
+  }
+  const url = typeof ohlcvUrl === "function" ? ohlcvUrl(code) : null;
+  if (!url || typeof computeTechnicalFromRows !== "function") {
+    renderTechnical({ status: "unsupported" });
+    return;
+  }
+  document.getElementById("tech-score-badge").textContent = "불러오는 중…";
+  document.getElementById("tech-score-num").textContent = "-";
+  document.getElementById("price-chart").innerHTML = '<div class="panel-empty">차트를 불러오는 중…</div>';
+  try {
+    const res = await fetch(url, { cache: "no-store" });
+    const data = await res.json();
+    if (state.currentCode !== code) return; // 종목이 바뀌었으면 무시
+    if (!res.ok || data.error || !Array.isArray(data.rows)) {
+      renderTechnical({ status: "error", reason: "차트를 불러오지 못했습니다 (잠시 후 다시 시도)" });
+      return;
+    }
+    const tech = computeTechnicalFromRows(code, stockName(code), data.rows);
+    state.techCache[code] = tech;
+    renderTechnical(tech);
+    renderSummaryStrip(code); // 기술 태그 반영
+  } catch (e) {
+    if (state.currentCode === code) renderTechnical({ status: "error", reason: "차트를 불러오지 못했습니다" });
+  }
+}
+
 async function selectStock(code) {
   state.currentCode = code;
   renderResultList(state.lastRenderedItems.length ? state.lastRenderedItems : state.watchlist);
   startQuoteAutoRefresh(code); // 라이브 시세는 전종목 대상(심층분석 지원 여부와 무관)
 
   if (!state.watchlistCodes.has(code)) {
-    renderTechnical({ status: "unsupported" });
+    // 워치리스트 밖이라 재무(DART)는 미지원이지만, 기술적분석은 네이버 차트로 즉석 계산(전종목).
     renderFundamental({ status: "unsupported" });
     renderSummaryStrip(code); // 미지원 종목도 strip(이름+라이브 시세)은 표시
+    await loadOnDemandTechnical(code);
     return;
   }
 

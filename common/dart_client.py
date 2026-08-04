@@ -43,7 +43,13 @@ def _get_json(endpoint: str, params: dict) -> dict:
     params = {**params, "crtfc_key": _require_key()}
     resp = requests.get(f"{BASE_URL}/{endpoint}", params=params, timeout=15)
     resp.raise_for_status()
-    payload = resp.json()
+    try:
+        payload = resp.json()
+    except ValueError as exc:
+        # DART가 동시요청 과다 등으로 JSON이 아닌 응답(빈 본문/HTML 오류페이지)을 줄 때가 있다.
+        # JSONDecodeError는 ValueError라 재시도 대상(DartApiError)으로 바꿔 백오프 재시도되게 한다
+        # (예전엔 재시도 없이 바로 실패해 일부 종목 재무가 빈 상태로 남았음).
+        raise DartApiError(f"{endpoint} 비정상 응답(JSON 파싱 실패): {resp.text[:80]!r}") from exc
     status = payload.get("status")
     if status == "013":  # 조회된 데이터가 없습니다 — 오류가 아니라 '해당 없음'
         return payload

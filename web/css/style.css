@@ -195,6 +195,8 @@ html, body {
 .result-item .r-meta { display: flex; gap: 8px; align-items: center; font-size: 11px; color: var(--text-muted); }
 .result-item .r-tag { background: rgba(57,135,229,.15); color: var(--series-1); padding: 1px 6px; border-radius: 4px; font-size: 10px; }
 .result-item .r-tag-muted { background: rgba(255,255,255,.06); color: var(--text-muted); }
+.result-item .r-price { margin-left: auto; font-size: 11px; font-variant-numeric: tabular-nums; color: var(--text-secondary); white-space: nowrap; display: flex; gap: 4px; align-items: center; }
+.result-item .r-cap { color: var(--text-muted); font-size: 10px; }
 .result-item .r-score { margin-left: auto; font-weight: 700; }
 
 /* ---------- technical panel ---------- */
