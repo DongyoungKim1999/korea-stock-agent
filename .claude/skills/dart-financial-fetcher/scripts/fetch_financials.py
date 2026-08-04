@@ -18,7 +18,10 @@ from common import dart_client  # noqa: E402
 from common.config import has_dart_key  # noqa: E402
 
 
-def fetch(stock_code: str, periods: int) -> dict:
+def fetch(stock_code: str, periods: int, annual_only: bool = False) -> dict:
+    """재무제표 조회. annual_only=True면 최근 사업연도(연간) 보고서만 받는다 — 분기 보고서를 ×N
+    연환산하면 경기민감주의 ROE/FCFF가 왜곡되므로(정규화 실패), 전종목 기본적분석은 연간 기준을 쓴다.
+    """
     if not has_dart_key():
         return {"status": "error", "stock_code": stock_code, "reason": "DART_API_KEY 미설정 (.env 확인)"}
 
@@ -39,7 +42,10 @@ def fetch(stock_code: str, periods: int) -> dict:
         profile_warning = None
 
     try:
-        periods_data = dart_client.get_recent_financial_statements(corp["corp_code"], periods_needed=periods)
+        if annual_only:
+            periods_data = dart_client.get_annual_statements(corp["corp_code"], years=periods)
+        else:
+            periods_data = dart_client.get_recent_financial_statements(corp["corp_code"], periods_needed=periods)
     except Exception as exc:
         return {
             "status": "error",

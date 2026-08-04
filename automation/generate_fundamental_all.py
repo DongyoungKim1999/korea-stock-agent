@@ -44,20 +44,41 @@ def load_universe() -> list[dict]:
     return [{"code": c["code"], "name": c["name"]} for c in data.get("companies", [])]
 
 
+def normalized_fcff_eok(periods: list[dict]) -> float | None:
+    """최근 여러 사업연도의 FCFF(≈영업활동현금흐름−CapEx, 연간이라 연환산 없음)를 평균해 정규화한다.
+    단일 분기·단일 연도를 그대로 쓰면 경기민감주에서 크게 왜곡되므로(문서화된 DCF 실수) 평균으로 완화."""
+    vals = []
+    for p in periods:
+        raw = compute_ratios.extract_raw_amounts(p["accounts"])
+        ocf = raw["operating_cash_flow"]["thstrm"]
+        capex = raw["capex"]["thstrm"]
+        if ocf is not None:
+            vals.append(ocf - abs(capex) if capex is not None else ocf)
+    if not vals:
+        return None
+    return round((sum(vals) / len(vals)) / 1e8, 1)  # 원 → 억원 평균
+
+
 def fetch_raw(entry: dict) -> dict:
-    """한 종목의 최신 보고서를 받아 원시 비율/퀄리티/밸류에이션 + 업종코드를 산출(피어 비교 없음)."""
+    """한 종목의 최근 연간 보고서(최대 3개)로 원시 비율/퀄리티/밸류에이션 + 업종코드를 산출.
+    분기 ×N 연환산의 ROE/FCFF 왜곡을 피하려 '연간 기준'을 쓰고, FCFF는 최근 연도들 평균으로 정규화한다."""
     code, name = entry["code"], entry["name"]
     try:
-        fetched = fetch_financials.fetch(code, periods=1)
+        fetched = fetch_financials.fetch(code, periods=3, annual_only=True)  # 최근 3개 사업연도(연간)
     except Exception as exc:
         return {"code": code, "name": name, "status": "error", "reason": str(exc)[:120]}
     if fetched.get("status") != "ok" or not fetched.get("periods"):
         return {"code": code, "name": name, "status": "error", "reason": fetched.get("reason", "재무데이터 없음")}
 
-    latest = fetched["periods"][0]
+    latest = fetched["periods"][0]  # 최신 사업연도(연간 → 연환산 계수 1.0, 왜곡 없음)
     raw_ratios = compute_ratios.compute_period_ratios(latest["accounts"])
     latest_close = gf.read_latest_close(code)  # 워치리스트만 technical JSON 존재 → 대부분 None(밸류에이션은 라이브 시세로 대체)
     qv = compute_ratios.compute_quality_valuation(fetched["periods"], latest_close)
+    # FCFF는 최근 연도들 평균으로 정규화(단일 연도 왜곡 완화)
+    if qv.get("valuation_inputs") is not None:
+        nf = normalized_fcff_eok(fetched["periods"])
+        if nf is not None:
+            qv["valuation_inputs"]["fcff_eok"] = nf
     return {
         "code": code, "name": name, "status": "ok",
         "corp_code": fetched.get("corp_code"),

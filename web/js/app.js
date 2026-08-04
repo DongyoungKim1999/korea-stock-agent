@@ -550,12 +550,18 @@ function renderValuation(val) {
     perEl.className = "val-tile-value";
     perNote.textContent = (per < 10 ? "이익 대비 낮은 편" : per > 30 ? "이익 대비 높은 편" : "") + (src && !(per < 10 || per > 30) ? src.trim() : src);
   }
-  // PBR: 1배 미만은 순자산가치 이하 신호
+  // PBR: 1배 미만은 순자산가치 이하지만, 퀄리티가 약하면 저평가가 아니라 '가치 함정'일 수 있다
+  // (무형자산 비중↑로 PBR의 유효성이 낮아진 점도 감안 — 무조건 긍정 표시하지 않음).
   if (pbr == null) { pbrEl.textContent = "-"; pbrNote.textContent = ""; pbrEl.className = "val-tile-value"; }
   else {
     pbrEl.textContent = `${pbr.toFixed(2)}배`;
-    if (pbr < 1) { pbrEl.className = "val-tile-value val-cheap"; pbrNote.textContent = "순자산가치 이하"; }
-    else { pbrEl.className = "val-tile-value"; pbrNote.textContent = (pbr > 3 ? "순자산 대비 높음" : "") + src; }
+    if (pbr < 1) {
+      const q = (state.fundCache[state.currentCode] || {}).quality;
+      const fs = q && q.f_score;
+      const weakQuality = q && ((q.roe_pct != null && q.roe_pct < 5) || (fs && fs.max_score && fs.score / fs.max_score < 4 / 9));
+      if (weakQuality) { pbrEl.className = "val-tile-value val-warn"; pbrNote.textContent = "PBR<1 · 저ROE라 가치함정 주의"; }
+      else { pbrEl.className = "val-tile-value val-cheap"; pbrNote.textContent = "순자산가치 이하(저평가 신호)"; }
+    } else { pbrEl.className = "val-tile-value"; pbrNote.textContent = (pbr > 3 ? "순자산 대비 높음" : "") + src; }
   }
 }
 
@@ -695,16 +701,17 @@ function renderSummaryStrip(code) {
   const okF = fund && fund.status === "ok";
 
   const tags = [];
-  // 밸류에이션
+  const q = okF ? fund.quality : null;
+  const fs = q && q.f_score ? q.f_score : null;
+  const weakQuality = q && ((q.roe_pct != null && q.roe_pct < 5) || (fs && fs.max_score && fs.score / fs.max_score < 4 / 9));
+  // 밸류에이션 (PBR<1은 퀄리티 약하면 저평가가 아니라 가치함정)
   const val = okF ? fund.valuation : null;
   if (val && val.basis === "eps_derived") {
-    if (val.pbr != null && val.pbr < 1) tags.push({ t: "PBR<1 저평가", c: "good" });
+    if (val.pbr != null && val.pbr < 1) tags.push(weakQuality ? { t: "PBR<1 가치함정 주의", c: "warn" } : { t: "PBR<1 저평가", c: "good" });
     else if (val.per != null && val.per > 0 && val.per < 10) tags.push({ t: "이익 대비 저평가", c: "good" });
     else if (val.per != null && val.per > 40) tags.push({ t: "밸류에이션 부담", c: "warn" });
   }
   // 퀄리티
-  const q = okF ? fund.quality : null;
-  const fs = q && q.f_score ? q.f_score : null;
   if (fs && fs.max_score) {
     const r = fs.score / fs.max_score;
     if (r >= 7 / 9) tags.push({ t: `우량(F${fs.score})`, c: "good" });

@@ -230,9 +230,13 @@ def get_dividend_info(corp_code: str, bsns_year: str) -> dict | None:
 
 
 def get_annual_statements(corp_code: str, years: int = 4) -> list[dict]:
-    """최근 N개 '사업연도(연간)' 재무제표를 최신연도부터 반환 — 매출/이익/마진 추이용.
+    """최근 N개 '사업연도(연간)' 재무제표를 최신연도부터 반환 — 매출/이익/마진 추이·정규화 FCFF/ROE용.
 
-    확정 공시분만 캐시하는 _fetch_statement를 재사용하므로 실행 간 재호출이 최소화된다."""
+    확정 공시분만 캐시하는 _fetch_statement를 재사용하므로 실행 간 재호출이 최소화된다.
+    최근 연간이 하나도 없으면(상폐·신규 등) 음성캐시로 다음 실행부터 헛조회를 건너뛴다."""
+    neg_key = f"dart_no_annual_{corp_code}_{years}"
+    if cache.read(neg_key, TTL_NO_STATEMENT) is not None:
+        return []
     results: list[dict] = []
     year = dt.date.today().year - 1  # 최근 확정 사업연도 후보(사업보고서는 익년 3월말 제출)
     attempts = 0
@@ -240,10 +244,12 @@ def get_annual_statements(corp_code: str, years: int = 4) -> list[dict]:
         for fs_div in ("CFS", "OFS"):
             payload = _fetch_statement(corp_code, str(year), REPRT_ANNUAL, fs_div)
             if payload.get("status") == "000" and payload.get("list"):
-                results.append({"bsns_year": str(year), "accounts": payload["list"]})
+                results.append({"bsns_year": str(year), "reprt_code": REPRT_ANNUAL, "accounts": payload["list"]})
                 break
         year -= 1
         attempts += 1
+    if not results:
+        cache.write(neg_key, {"no_annual": True})
     return results
 
 
