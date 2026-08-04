@@ -45,7 +45,7 @@
 
     <section class="panel panel-technical" aria-label="기술적 분석">
       <div class="panel-head">
-        <h2>기술적 분석 <span class="info-dot" title="이동평균·MACD·RSI·볼린저밴드·거래량·캔들패턴을 종합한 참고 점수">ⓘ</span></h2>
+        <h2>기술적 분석 <span class="info-dot" title="이동평균·MACD·RSI·볼린저·거래량·캔들에 상대강도(시장 대비 수익률)를 더한 종합 점수. 절대 신호가 비슷해도 시장 대비 강한 종목(주도주)과 약한 종목(소외주)을 벌려 비교할 수 있게 했습니다.">ⓘ</span></h2>
       </div>
 
       <div class="tech-score-row">
@@ -53,6 +53,7 @@
           <div class="tech-score-label">종합 기술 점수</div>
           <div class="tech-score-value"><span id="tech-score-num">-</span><span class="tech-score-max">/ 5.0</span> <span id="tech-score-badge" class="badge">-</span></div>
           <div class="tech-score-sub" id="tech-score-sub"></div>
+          <div class="tech-rs" id="tech-rs"></div>
         </div>
         <div class="gauge-wrap">
           <svg viewBox="0 0 120 68" class="gauge">

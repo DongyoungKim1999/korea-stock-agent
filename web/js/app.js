@@ -250,6 +250,7 @@ function renderTechnical(data) {
     clearRadar();
     renderRisk(null);
     renderLevels(null);
+    renderRS(null);
     warnEl.textContent = data && data.reason ? `사유: ${data.reason}` : "";
     return;
   }
@@ -283,7 +284,77 @@ function renderTechnical(data) {
   renderRisk(ind.risk);
   renderLevels(ind.levels, ind.latest_close);
   renderRiskReward(data.code); // 지지선 확보 — 목표주가(라이브)와 합쳐 손익비 산출
+  applyRelativeStrength(data);  // 상대강도(vs 코스피) 반영 → 점수 재보정 + RS 표시
   warnEl.textContent = humanizeWarnings(data.warnings);
+}
+
+// ---------- 상대강도(RS) — 시장(코스피) 대비 수익률로 점수를 벌려 비교 가능하게 ----------
+
+async function ensureKospi() {
+  if (state.kospiSeries) return state.kospiSeries;
+  if (state._kospiPromise) return state._kospiPromise;
+  const url = typeof ohlcvUrl === "function" ? ohlcvUrl("KOSPI") : null;
+  if (!url) { state.kospiSeries = []; return []; }
+  state._kospiPromise = (async () => {
+    try {
+      const res = await fetch(url, { cache: "no-store" });
+      const d = await res.json();
+      state.kospiSeries = d && Array.isArray(d.rows) ? d.rows : [];
+    } catch (e) { state.kospiSeries = []; }
+    return state.kospiSeries;
+  })();
+  return state._kospiPromise;
+}
+
+function computeRS(priceSeries) {
+  const k = state.kospiSeries;
+  if (!k || !k.length || !priceSeries || priceSeries.length < 40) return null;
+  const sp = priceSeries.map((r) => r.close), kp = k.map((r) => r.close);
+  const rel = (N) => {
+    if (sp.length < N || kp.length < N) return null;
+    const sr = sp[sp.length - 1] / sp[sp.length - N] - 1;
+    const kr = kp[kp.length - 1] / kp[kp.length - N] - 1;
+    return (sr - kr) * 100; // %p
+  };
+  return { rs3m: rel(60), rs6m: rel(120) }; // ~3개월/6개월 거래일
+}
+
+// 절대 기술신호(4개 서브점수)에 상대강도를 더해 1~5로 재보정 — 시장 주도주/소외주를 벌린다.
+function recalibratedScore(subs, rs) {
+  if (!subs || !rs || rs.rs3m == null) return null;
+  const base = 0.4 * (subs.trend || 0) + 0.3 * (subs.momentum_volatility || 0) + 0.2 * (subs.volume || 0) + 0.1 * (subs.candle || 0);
+  const rsSub = Math.max(-2, Math.min(2, rs.rs3m / 12)); // ±24%p → ±2
+  const blended = 0.55 * base + 0.45 * rsSub;
+  return Math.round(Math.max(1, Math.min(5, 3 + 1.4 * blended)) * 10) / 10;
+}
+
+function renderRS(rs) {
+  const el = document.getElementById("tech-rs");
+  if (!rs || rs.rs3m == null) { el.textContent = ""; return; }
+  const v = rs.rs3m;
+  const label = v >= 15 ? "시장 대비 매우 강함(주도주)" : v >= 3 ? "시장 대비 강함" : v > -3 ? "시장과 비슷" : v > -15 ? "시장 대비 약함" : "시장 대비 매우 약함(소외주)";
+  const c = v >= 3 ? "var(--good)" : v <= -3 ? "var(--critical)" : "var(--text-secondary)";
+  el.innerHTML = `상대강도 <b style="color:${c}">${v >= 0 ? "+" : ""}${v.toFixed(0)}%p</b> <span style="color:var(--text-muted)">(3개월·vs 코스피)</span> · <span style="color:${c}">${label}</span>`;
+}
+
+async function applyRelativeStrength(data) {
+  if (!data || data.status !== "ok" || !data.price_series) { renderRS(null); return; }
+  const code = data.code;
+  await ensureKospi();
+  if (state.currentCode !== code) return; // 종목이 바뀌었으면 무시
+  const rs = computeRS(data.price_series);
+  renderRS(rs);
+  const s = recalibratedScore(data.category_subscores, rs);
+  if (s != null) {
+    document.getElementById("tech-score-num").textContent = s.toFixed(1);
+    renderGauge(s);
+    const badge = scoreBadge(s);
+    const be = document.getElementById("tech-score-badge");
+    be.textContent = badge.text;
+    be.className = "badge" + (badge.cls ? " " + badge.cls : "");
+    data._displayScore = s; // 종합요약 태그에서 재사용
+    if (state.currentCode === code) renderSummaryStrip(code); // 재보정 점수로 태그 갱신
+  }
 }
 
 // ---------- 손익비 (Risk/Reward): 목표주가(컨센서스) vs 지지선 ----------
@@ -506,19 +577,30 @@ function renderDividend(div) {
   const y = document.getElementById("div-yield");
   const p = document.getElementById("div-payout");
   const d = document.getElementById("div-dps");
-  if (!div || div.status === "none") {
-    // 무배당(확정) 또는 데이터 없음
-    tiles.hidden = true;
-    none.hidden = !(div && div.status === "none");
-    if (!div) none.hidden = true;
+  const q = state.currentQuote;
+  const hasDart = div && div.status === "ok" && div.dividend_yield_pct != null;
+  // 라이브 시세 배당(네이버) — DART 배당이 없는 전종목(core)도 배당수익률/주당배당금 표시
+  const qYield = q && q.dividend_yield && q.dividend_yield !== "0.00%" ? q.dividend_yield : null;
+
+  if (hasDart) {
+    tiles.hidden = false; none.hidden = true;
+    y.textContent = `${div.dividend_yield_pct.toFixed(1)}%`;
+    y.style.color = div.dividend_yield_pct >= 4 ? "var(--good)" : "";
+    p.textContent = div.payout_pct == null ? "-" : `${Math.round(div.payout_pct)}%`;
+    d.textContent = div.dps == null ? "-" : `${Math.round(div.dps).toLocaleString("ko-KR")}원`;
     return;
   }
-  tiles.hidden = false;
-  none.hidden = true;
-  y.textContent = div.dividend_yield_pct == null ? "-" : `${div.dividend_yield_pct.toFixed(1)}%`;
-  y.style.color = div.dividend_yield_pct == null ? "" : div.dividend_yield_pct >= 4 ? "var(--good)" : "";
-  p.textContent = div.payout_pct == null ? "-" : `${Math.round(div.payout_pct)}%`;
-  d.textContent = div.dps == null ? "-" : `${Math.round(div.dps).toLocaleString("ko-KR")}원`;
+  if (qYield) {
+    tiles.hidden = false; none.hidden = true;
+    y.textContent = qYield;
+    y.style.color = parseFloat(qYield) >= 4 ? "var(--good)" : "";
+    p.textContent = div && div.payout_pct != null ? `${Math.round(div.payout_pct)}%` : "-"; // 배당성향은 DART만 제공
+    d.textContent = q.dividend || "-"; // "1,668원"
+    return;
+  }
+  // 무배당 또는 데이터 없음
+  tiles.hidden = true;
+  none.hidden = !(div && div.status === "none");
 }
 
 function fmtEok(v) {
@@ -587,10 +669,11 @@ function renderSummaryStrip(code) {
   const dv = okF ? fund.dividend : null;
   if (dv && dv.status === "ok" && dv.dividend_yield_pct != null && dv.dividend_yield_pct >= 4)
     tags.push({ t: `고배당 ${dv.dividend_yield_pct.toFixed(1)}%`, c: "good" });
-  // 기술
-  if (okT && tech.score != null) {
-    if (tech.score >= 4) tags.push({ t: "기술적 강세", c: "good" });
-    else if (tech.score <= 2) tags.push({ t: "기술적 약세", c: "bad" });
+  // 기술 (상대강도 반영된 재보정 점수 우선)
+  const ts = okT ? (tech._displayScore ?? tech.score) : null;
+  if (ts != null) {
+    if (ts >= 4) tags.push({ t: "기술적 강세", c: "good" });
+    else if (ts <= 2) tags.push({ t: "기술적 약세", c: "bad" });
   }
   // 리스크
   const risk = okT ? (tech.indicators || {}).risk : null;
@@ -688,15 +771,48 @@ function computeValuation() {
   }
 }
 
+// "1,403조 1,069억" → 억원 숫자
+function parseMarketCapEok(text) {
+  if (!text) return null;
+  const s = String(text).replace(/,/g, "");
+  const jo = (s.match(/(\d+)조/) || [])[1];
+  const eok = (s.match(/(\d+)억/) || [])[1];
+  let v = 0;
+  if (jo) v += parseInt(jo, 10) * 10000;
+  if (eok) v += parseInt(eok, 10);
+  if (!jo && !eok) { const n = parseFloat(s); return Number.isFinite(n) ? n : null; }
+  return v || null;
+}
+
 function autofillValuation(code) {
-  // 현재가·발행주식수를 선택 종목 데이터로 채운다(사용자가 덮어쓸 수 있음).
+  // 선택 종목의 실제 데이터로 계산기 가정을 채운다(전부 사용자가 덮어쓸 수 있음).
   const q = state.currentQuote;
   const fund = state.fundCache[code];
-  const priceEl = document.getElementById("valc-price");
-  const sharesEl = document.getElementById("valc-shares");
-  if (q && q.price != null) priceEl.value = Math.round(q.price);
   const val = fund && fund.status === "ok" ? fund.valuation : null;
-  if (val && val.shares_estimated) sharesEl.value = (val.shares_estimated / 1e6).toFixed(1);
+  const vi = fund && fund.status === "ok" ? fund.valuation_inputs : null;
+  const set = (id, v) => { if (v != null && Number.isFinite(v)) document.getElementById(id).value = v; };
+
+  if (q && q.price != null) set("valc-price", Math.round(q.price));
+
+  // 발행주식수(백만주): EPS 역산값 우선, 없으면 시총/현재가로 역산(전종목 가능)
+  let sharesM = val && val.shares_estimated ? val.shares_estimated / 1e6 : null;
+  if (sharesM == null && q && q.price) {
+    const mcEok = parseMarketCapEok(q.market_cap_text);
+    if (mcEok) sharesM = (mcEok * 100) / q.price; // 억원*100/원 = 백만주
+  }
+  if (sharesM != null) set("valc-shares", Math.round(sharesM * 10) / 10);
+
+  // FCFF(억원)·순부채(억원) — 재무 파이프라인 valuation_inputs
+  if (vi) {
+    set("valc-fcff", vi.fcff_eok);
+    set("valc-netdebt", vi.net_debt_eok);
+  }
+  // 고성장률 기본값: 매출성장률을 합리적 범위로 보정(극단·음수는 8%로)
+  if (fund && fund.status === "ok" && fund.growth) {
+    const rg = fund.growth.revenue_growth_yoy && fund.growth.revenue_growth_yoy.target;
+    const g = rg != null && rg >= 0 && rg <= 30 ? Math.round(rg * 10) / 10 : 8;
+    set("valc-g1", g);
+  }
   computeValuation();
 }
 
@@ -789,6 +905,8 @@ async function refreshQuote(code) {
   state.currentQuote = q;
   renderQuote(q);
   renderRiskReward(code); // 목표주가가 들어왔으니 손익비 갱신
+  const fund = state.fundCache[code];
+  renderDividend(fund && fund.status === "ok" ? fund.dividend : null); // 시세 배당 폴백 반영
   // 종합요약 이름을 라이브 데이터로 보정(비워치리스트 종목 등)
   if (q && q.name) document.getElementById("ss-name").textContent = `${q.name} 종합`;
 }

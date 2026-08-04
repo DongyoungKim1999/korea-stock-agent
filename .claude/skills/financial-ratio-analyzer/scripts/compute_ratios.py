@@ -49,6 +49,9 @@ _ACCOUNT_MAP = {
     "operating_cash_flow": (("ifrs-full_CashFlowsFromUsedInOperatingActivities",), ("영업활동현금흐름", "영업활동으로인한현금흐름"), ("CF",)),
     "issued_capital": (("ifrs-full_IssuedCapital",), ("자본금",), ("BS",)),  # 신주발행(희석) 판별용
     "eps": (("ifrs-full_BasicEarningsLossPerShare", "dart_BasicEarningsLossPerShareChanged"), ("기본주당이익", "기본주당순이익", "주당순이익"), _IS_DIVS),
+    # DCF 계산기 자동채움용: CapEx(유형자산 취득)·현금성자산
+    "capex": (("ifrs-full_PurchaseOfPropertyPlantAndEquipmentClassifiedAsInvestingActivities",), ("유형자산의취득", "유형자산의 취득"), ("CF",)),
+    "cash": (("ifrs-full_CashAndCashEquivalents",), ("현금및현금성자산",), ("BS",)),
 }
 
 # 보고서코드별 연환산 계수 (분기 누계 → 연간). 1분기 ×4, 반기 ×2, 3분기 ×4/3, 사업보고서 ×1.
@@ -306,7 +309,24 @@ def compute_quality_valuation(periods: list[dict], latest_close: float | None) -
                 "earnings_basis": earnings_basis,
                 "basis": "eps_derived",  # 종가 + DART EPS 역산 기준. 시장 공표 PER과 소수 오차 가능
             }
-    return {"quality": quality, "valuation": valuation}
+
+    # DCF 계산기 자동채움용 입력값(억원 단위). FCFF ≈ 영업활동현금흐름 − CapEx(연환산). 순부채 = 부채총계 − 현금성자산.
+    factor2 = _ANNUALIZE_FACTOR.get(reprt_code or "", 1.0)
+    ocf = t.get("operating_cash_flow")
+    capex = t.get("capex")
+    fcff = None
+    if ocf is not None:
+        fcff = (ocf - abs(capex)) * factor2 if capex is not None else ocf * factor2
+    liabilities = t.get("liabilities")
+    cash = t.get("cash")
+    net_debt = (liabilities - cash) if (liabilities is not None and cash is not None) else None
+    to_eok = lambda v: round(v / 1e8, 1) if v is not None else None  # 원 → 억원
+    valuation_inputs = {
+        "fcff_eok": to_eok(fcff),          # 연환산 잉여현금흐름(근사, 억원)
+        "net_debt_eok": to_eok(net_debt),  # 순부채(억원), 음수면 순현금
+        "capex_included": capex is not None,
+    }
+    return {"quality": quality, "valuation": valuation, "valuation_inputs": valuation_inputs}
 
 
 def _load(path: str) -> dict:

@@ -110,6 +110,7 @@ async function handleQuote(code, origin) {
       out.pbr = infos.pbr || null;
       out.bps = infos.bps || null;
       out.dividend_yield = infos.dividendYieldRatio || null;  // 시가배당률
+      out.dividend = infos.dividend || null;                  // 주당배당금
       out.week52_high = num(infos.highPriceOf52Weeks);
       out.week52_low = num(infos.lowPriceOf52Weeks);
       const c = g.consensusInfo;
@@ -130,8 +131,9 @@ async function handleQuote(code, origin) {
 // 네이버 일봉 차트(siseJson) 프록시 — 전종목 on-demand 기술분석용. KRX 전종목 조회가 클라우드에서
 // 막혀도 개별종목 차트는 네이버에서 받을 수 있어, 브라우저가 이걸로 지표를 즉석 계산한다.
 async function handleOhlcv(code, origin) {
-  if (!/^\d{6}$/.test(code || "")) {
-    return jsonResponse({ error: "종목코드(6자리 숫자)가 필요합니다" }, 400, origin);
+  // 6자리 종목코드 또는 지수 심볼(KOSPI/KOSDAQ/KPI200 등, 상대강도 계산용) 허용
+  if (!/^(\d{6}|[A-Z0-9]{3,8})$/.test(code || "")) {
+    return jsonResponse({ error: "종목코드(6자리) 또는 지수 심볼이 필요합니다" }, 400, origin);
   }
   const end = new Date(Date.now() + 9 * 3600 * 1000); // KST
   const start = new Date(end.getTime() - 460 * 24 * 3600 * 1000); // ~300 거래일 확보용 여유

@@ -63,7 +63,7 @@ def fetch_raw(entry: dict) -> dict:
         "corp_code": fetched.get("corp_code"),
         "induty": (fetched.get("induty_code") or "UNKNOWN"),
         "ratios": {k: raw_ratios.get(k) for k in ALL_RATIO_KEYS},
-        "quality": qv["quality"], "valuation": qv["valuation"],
+        "quality": qv["quality"], "valuation": qv["valuation"], "valuation_inputs": qv.get("valuation_inputs"),
         "latest_period": {"bsns_year": latest.get("bsns_year"), "reprt_code": latest.get("reprt_code")},
         "periods": fetched["periods"],  # 워치리스트 배당/추이용
         "warnings": fetched.get("warnings", []),
@@ -143,6 +143,7 @@ def build_output(r: dict, industry_avg: dict, industry_count: dict, market_avg: 
         "activity": ratios_dict["activity"],
         "quality": r["quality"],
         "valuation": r["valuation"],
+        "valuation_inputs": r.get("valuation_inputs"),
         "warnings": r.get("warnings", []),
     }
     # 워치리스트(우량주)는 배당·실적추이까지 추가
