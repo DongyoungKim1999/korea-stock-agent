@@ -162,6 +162,40 @@ async function handleOhlcv(code, origin) {
   return jsonResponse({ code, source: "naver", rows }, 200, origin);
 }
 
+// 네이버 연간 재무(finance/annual) 프록시 — 연도별 PER/PBR/ROE/EPS/매출/마진 이력.
+// 밸류에이션 밴드(현재 PER이 과거 대비 싼가/비싼가) + 전종목 실적추이에 쓴다.
+async function handleFinance(code, origin) {
+  if (!/^\d{6}$/.test(code || "")) {
+    return jsonResponse({ error: "종목코드(6자리)가 필요합니다" }, 400, origin);
+  }
+  let j;
+  try {
+    const res = await fetch(`https://m.stock.naver.com/api/stock/${code}/finance/annual`, { headers: { "User-Agent": "Mozilla/5.0" } });
+    if (!res.ok) return jsonResponse({ error: `재무이력 조회 실패(${res.status})`, code }, 502, origin);
+    j = await res.json();
+  } catch (e) {
+    return jsonResponse({ error: "재무이력 조회 실패", code }, 502, origin);
+  }
+  const rows = (j.financeInfo || {}).rowList || [];
+  const titleOf = (r) => (r.title && (r.title.main || r.title)) || "";
+  const perRow = rows.find((r) => titleOf(r) === "PER");
+  if (!perRow) return jsonResponse({ error: "재무이력 없음", code }, 502, origin);
+  const cols = Object.keys(perRow.columns || {}).sort();
+  const want = { PER: "per", PBR: "pbr", ROE: "roe", EPS: "eps", 매출액: "revenue", 영업이익률: "op_margin", 순이익률: "net_margin", 주당배당금: "dps" };
+  const out = { code, years: cols.map((c) => c.slice(0, 4)) };
+  for (const row of rows) {
+    const key = want[titleOf(row)];
+    if (!key) continue;
+    out[key] = cols.map((c) => {
+      const v = row.columns[c] && row.columns[c].value;
+      if (v == null || v === "" || v === "-") return null;
+      const n = parseFloat(String(v).replace(/,/g, ""));
+      return Number.isFinite(n) ? n : null;
+    });
+  }
+  return jsonResponse(out, 200, origin);
+}
+
 export default {
   async fetch(request, env) {
     const origin = request.headers.get("Origin") || "";
@@ -179,6 +213,10 @@ export default {
     // GET /ohlcv?code=XXXXXX — 일봉 차트 (전종목 on-demand 기술분석용)
     if (request.method === "GET" && path.endsWith("/ohlcv")) {
       return handleOhlcv(url.searchParams.get("code"), origin);
+    }
+    // GET /finance?code=XXXXXX — 연간 재무이력 (밸류에이션 밴드용)
+    if (request.method === "GET" && path.endsWith("/finance")) {
+      return handleFinance(url.searchParams.get("code"), origin);
     }
 
     if (request.method !== "POST") {

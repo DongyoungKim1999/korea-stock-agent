@@ -336,6 +336,12 @@ html, body {
 .val-tile-value.val-warn { color: var(--warning); }
 .val-tile-note { font-size: 10px; color: var(--text-muted); margin-top: 2px; min-height: 12px; }
 
+.val-band { margin-top: 12px; }
+.vb-head { font-size: 11px; color: var(--text-secondary); display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.vb-bar { position: relative; height: 6px; border-radius: 3px; margin: 6px 0 4px; background: linear-gradient(90deg, rgba(22,193,114,.4), rgba(255,255,255,.08) 50%, rgba(229,72,77,.4)); }
+.vb-marker { position: absolute; top: -2px; width: 2px; height: 10px; background: var(--text-primary); transform: translateX(-1px); }
+.vb-years { font-size: 10.5px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+
 .quality-row { display: flex; gap: 14px; align-items: center; background: var(--bg-card-alt); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px; }
 .fscore-wrap { display: flex; flex-direction: column; align-items: center; gap: 2px; flex-shrink: 0; }
 .fscore-badge {

@@ -20,3 +20,10 @@ function ohlcvUrl(code) {
   const base = GPT_WORKER_URL.replace(/\/+$/, "");
   return `${base}/ohlcv?code=${encodeURIComponent(code)}`;
 }
+
+// Worker 기반 연간 재무이력 URL (/finance 라우트) — 밸류에이션 밴드용.
+function financeUrl(code) {
+  if (!GPT_WORKER_URL || !GPT_WORKER_URL.trim()) return null;
+  const base = GPT_WORKER_URL.replace(/\/+$/, "");
+  return `${base}/finance?code=${encodeURIComponent(code)}`;
+}

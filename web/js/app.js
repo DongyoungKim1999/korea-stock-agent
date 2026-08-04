@@ -518,32 +518,78 @@ function renderFundamental(data) {
   warnEl.textContent = humanizeWarnings(data.warnings);
 }
 
+function _parseBae(t) { // "19.40배" → 19.40
+  if (t == null) return null;
+  const n = parseFloat(String(t).replace(/[^0-9.\-]/g, ""));
+  return Number.isFinite(n) ? n : null;
+}
+
 function renderValuation(val) {
   const perEl = document.getElementById("val-per");
   const pbrEl = document.getElementById("val-pbr");
   const perNote = document.getElementById("val-per-note");
   const pbrNote = document.getElementById("val-pbr-note");
-  if (!val || val.basis !== "eps_derived") {
+  // DART 역산값(120 full)이 있으면 그걸, 없으면(core 전종목) 라이브 시세의 PER/PBR을 쓴다.
+  const q = state.currentQuote;
+  const hasDart = val && val.basis === "eps_derived";
+  const per = hasDart ? val.per : (q ? _parseBae(q.per) : null);
+  const pbr = hasDart ? val.pbr : (q ? _parseBae(q.pbr) : null);
+  const src = !hasDart && q ? " (시세)" : "";
+
+  if (per == null && pbr == null) {
     perEl.textContent = pbrEl.textContent = "-";
-    perNote.textContent = pbrNote.textContent = val && val.basis === "unavailable" ? "산출 불가(EPS 미공시 등)" : "";
+    perNote.textContent = pbrNote.textContent = (val && val.basis === "unavailable") ? "산출 불가" : "";
     perEl.className = pbrEl.className = "val-tile-value";
     return;
   }
-  // PER: 음수면 적자. 절대 저평가/고평가 단정은 피하고 방향성만 가볍게.
-  if (val.per == null) { perEl.textContent = "-"; perNote.textContent = ""; }
-  else if (val.per < 0) { perEl.textContent = "적자"; perEl.className = "val-tile-value val-warn"; perNote.textContent = "순이익 마이너스"; }
+  // PER
+  if (per == null) { perEl.textContent = "-"; perNote.textContent = ""; perEl.className = "val-tile-value"; }
+  else if (per < 0) { perEl.textContent = "적자"; perEl.className = "val-tile-value val-warn"; perNote.textContent = "순이익 마이너스"; }
   else {
-    perEl.textContent = `${val.per.toFixed(1)}배`;
+    perEl.textContent = `${per.toFixed(1)}배`;
     perEl.className = "val-tile-value";
-    perNote.textContent = val.per < 10 ? "이익 대비 낮은 편" : val.per > 30 ? "이익 대비 높은 편" : "";
+    perNote.textContent = (per < 10 ? "이익 대비 낮은 편" : per > 30 ? "이익 대비 높은 편" : "") + (src && !(per < 10 || per > 30) ? src.trim() : src);
   }
-  // PBR: 1배 미만은 순자산가치 이하 — 명확히 의미 있는 신호라 표시.
-  if (val.pbr == null) { pbrEl.textContent = "-"; pbrNote.textContent = ""; pbrEl.className = "val-tile-value"; }
+  // PBR: 1배 미만은 순자산가치 이하 신호
+  if (pbr == null) { pbrEl.textContent = "-"; pbrNote.textContent = ""; pbrEl.className = "val-tile-value"; }
   else {
-    pbrEl.textContent = `${val.pbr.toFixed(2)}배`;
-    if (val.pbr < 1) { pbrEl.className = "val-tile-value val-cheap"; pbrNote.textContent = "순자산가치 이하"; }
-    else { pbrEl.className = "val-tile-value"; pbrNote.textContent = val.pbr > 3 ? "순자산 대비 높음" : ""; }
+    pbrEl.textContent = `${pbr.toFixed(2)}배`;
+    if (pbr < 1) { pbrEl.className = "val-tile-value val-cheap"; pbrNote.textContent = "순자산가치 이하"; }
+    else { pbrEl.className = "val-tile-value"; pbrNote.textContent = (pbr > 3 ? "순자산 대비 높음" : "") + src; }
   }
+}
+
+// 밸류에이션 밴드 — 네이버 연간 PER 이력으로 현재가 위치(역사적 저평가/고평가) 표시.
+function renderValBand(fin) {
+  const band = document.getElementById("val-band");
+  if (!fin || !Array.isArray(fin.per)) { band.hidden = true; return; }
+  const valid = fin.per.map((v, i) => ({ v, y: fin.years[i] })).filter((o) => o.v != null && o.v > 0);
+  if (valid.length < 2) { band.hidden = true; return; }
+  const vals = valid.map((o) => o.v);
+  const min = Math.min(...vals), max = Math.max(...vals), cur = valid[valid.length - 1].v;
+  const pos = max > min ? ((cur - min) / (max - min)) * 100 : 50;
+  band.hidden = false;
+  document.getElementById("vb-marker").style.left = `${Math.max(0, Math.min(100, pos))}%`;
+  const verdict = pos <= 30 ? "역사적 저평가권" : pos >= 70 ? "역사적 고평가권" : "중간 수준";
+  const vc = pos <= 30 ? "var(--good)" : pos >= 70 ? "var(--critical)" : "var(--text-secondary)";
+  document.getElementById("vb-verdict").innerHTML = `<span style="color:${vc}">${verdict}</span> · 현재 ${cur.toFixed(1)}배 (범위 ${min.toFixed(1)}~${max.toFixed(1)})`;
+  document.getElementById("vb-years").textContent = valid.map((o) => `${String(o.y).slice(2)} ${o.v.toFixed(1)}`).join("  ·  ");
+}
+
+async function loadValuationBand(code) {
+  document.getElementById("val-band").hidden = true;
+  const url = typeof financeUrl === "function" ? financeUrl(code) : null;
+  if (!url) return;
+  state.financeCache = state.financeCache || {};
+  try {
+    if (state.financeCache[code] === undefined) {
+      const r = await fetch(url, { cache: "no-store" });
+      const d = await r.json();
+      state.financeCache[code] = d && !d.error ? d : null;
+    }
+    if (state.currentCode !== code) return;
+    renderValBand(state.financeCache[code]);
+  } catch (e) { /* 밴드는 부가정보 — 실패해도 무시 */ }
 }
 
 function renderQuality(q) {
@@ -784,7 +830,45 @@ function parseMarketCapEok(text) {
   return v || null;
 }
 
-function autofillValuation(code) {
+// DCF 가정의 회사별 기본값 — 외부에 '발표된' 값이 아니라(그건 애널리스트 가정),
+// 회사 자체 데이터로 계산한다. 무위험 3.3%(국고10Y 근사)·시장위험프리미엄 6.5%·법인세 22%.
+const _RF = 3.3, _ERP = 6.5, _TAX = 0.22, _RD = 5.0;
+
+function computeBeta(priceSeries) {
+  const k = state.kospiSeries;
+  if (!k || !k.length || !priceSeries || priceSeries.length < 60) return null;
+  const N = Math.min(priceSeries.length, k.length, 250);
+  const sp = priceSeries.slice(-N).map((r) => r.close), kp = k.slice(-N).map((r) => r.close);
+  const sr = [], kr = [];
+  for (let i = 1; i < N; i++) { sr.push(sp[i] / sp[i - 1] - 1); kr.push(kp[i] / kp[i - 1] - 1); }
+  const mean = (a) => a.reduce((x, y) => x + y, 0) / a.length;
+  const ms = mean(sr), mk = mean(kr);
+  let cov = 0, vk = 0;
+  for (let i = 0; i < sr.length; i++) { cov += (sr[i] - ms) * (kr[i] - mk); vk += (kr[i] - mk) ** 2; }
+  return vk > 0 ? cov / vk : null;
+}
+
+function companyWacc(beta, equityEok, netDebtEok) {
+  const b = beta == null ? 1.0 : Math.max(0.3, Math.min(2.0, beta));
+  const re = _RF + b * _ERP;                 // 자기자본비용(CAPM)
+  const E = Math.max(equityEok || 0, 1), D = Math.max(netDebtEok || 0, 0);
+  const wacc = (E * re + D * (_RD * (1 - _TAX))) / (E + D); // 자본구조 가중
+  return Math.round(Math.max(6, Math.min(15, wacc)) * 10) / 10;
+}
+
+function growthYears(roe, fscore, fmax) {
+  let y = 5;
+  if (roe != null) { if (roe >= 20) y = 9; else if (roe >= 15) y = 8; else if (roe >= 10) y = 6; else if (roe < 5) y = 3; }
+  if (fscore != null && fmax && fscore / fmax >= 7 / 9) y += 1; // 우량이면 성장 지속 길게
+  return Math.max(3, Math.min(10, y));
+}
+
+function terminalGrowth(roe) {
+  if (roe == null) return 2.5;
+  return roe >= 15 ? 3.0 : roe < 5 ? 2.0 : 2.5; // 장기 경제성장률 근방에서 퀄리티로 미세조정
+}
+
+async function autofillValuation(code) {
   // 선택 종목의 실제 데이터로 계산기 가정을 채운다(전부 사용자가 덮어쓸 수 있음).
   const q = state.currentQuote;
   const fund = state.fundCache[code];
@@ -795,24 +879,30 @@ function autofillValuation(code) {
   if (q && q.price != null) set("valc-price", Math.round(q.price));
 
   // 발행주식수(백만주): EPS 역산값 우선, 없으면 시총/현재가로 역산(전종목 가능)
+  const mcEok = q ? parseMarketCapEok(q.market_cap_text) : null;
   let sharesM = val && val.shares_estimated ? val.shares_estimated / 1e6 : null;
-  if (sharesM == null && q && q.price) {
-    const mcEok = parseMarketCapEok(q.market_cap_text);
-    if (mcEok) sharesM = (mcEok * 100) / q.price; // 억원*100/원 = 백만주
-  }
+  if (sharesM == null && mcEok && q && q.price) sharesM = (mcEok * 100) / q.price;
   if (sharesM != null) set("valc-shares", Math.round(sharesM * 10) / 10);
 
   // FCFF(억원)·순부채(억원) — 재무 파이프라인 valuation_inputs
-  if (vi) {
-    set("valc-fcff", vi.fcff_eok);
-    set("valc-netdebt", vi.net_debt_eok);
-  }
-  // 고성장률 기본값: 매출성장률을 합리적 범위로 보정(극단·음수는 8%로)
+  if (vi) { set("valc-fcff", vi.fcff_eok); set("valc-netdebt", vi.net_debt_eok); }
+
+  // 고성장률: 매출성장률을 합리적 범위로 보정
+  const roe = fund && fund.status === "ok" && fund.quality ? fund.quality.roe_pct : null;
+  const fs = fund && fund.status === "ok" && fund.quality ? fund.quality.f_score : null;
   if (fund && fund.status === "ok" && fund.growth) {
     const rg = fund.growth.revenue_growth_yoy && fund.growth.revenue_growth_yoy.target;
-    const g = rg != null && rg >= 0 && rg <= 30 ? Math.round(rg * 10) / 10 : 8;
-    set("valc-g1", g);
+    set("valc-g1", rg != null && rg >= 0 && rg <= 30 ? Math.round(rg * 10) / 10 : 8);
   }
+
+  // 회사별 WACC(베타 기반)·고성장기간(퀄리티)·영구성장률 — 코스피 로드 후 베타 계산
+  await ensureKospi();
+  if (state.currentCode !== code) return;
+  const tech = state.techCache[code];
+  const beta = tech && tech.status === "ok" ? computeBeta(tech.price_series) : null;
+  set("valc-wacc", companyWacc(beta, mcEok, vi ? vi.net_debt_eok : null));
+  set("valc-years", growthYears(roe, fs && fs.score, fs && fs.max_score));
+  set("valc-gt", terminalGrowth(roe));
   computeValuation();
 }
 
@@ -907,6 +997,7 @@ async function refreshQuote(code) {
   renderRiskReward(code); // 목표주가가 들어왔으니 손익비 갱신
   const fund = state.fundCache[code];
   renderDividend(fund && fund.status === "ok" ? fund.dividend : null); // 시세 배당 폴백 반영
+  renderValuation(fund && fund.status === "ok" ? fund.valuation : null); // 시세 PER/PBR 폴백 반영(core 종목)
   // 종합요약 이름을 라이브 데이터로 보정(비워치리스트 종목 등)
   if (q && q.name) document.getElementById("ss-name").textContent = `${q.name} 종합`;
 }
@@ -973,9 +1064,12 @@ async function loadFundamental(code) {
 
 async function selectStock(code) {
   state.currentCode = code;
+  // 딥링크: 현재 종목을 URL에 반영(북마크·공유 가능)
+  try { history.replaceState(null, "", `?code=${code}`); } catch (e) {}
   renderResultList(state.lastRenderedItems.length ? state.lastRenderedItems : state.watchlist);
   startQuoteAutoRefresh(code); // 라이브 시세는 전종목 대상
   loadFundamental(code);       // 재무 기본적분석도 전종목 대상(업종평균)
+  loadValuationBand(code);     // 밸류에이션 밴드(과거 대비 PER 위치)
   renderSummaryStrip(code);
 
   if (state.watchlistCodes.has(code)) {
@@ -1117,7 +1211,17 @@ async function init() {
   wireModal();
   wireValuationCalc();
 
-  if (state.watchlist.length) selectStock(state.watchlist[0].code);
+  // 딥링크: URL의 ?code=가 있으면 그 종목을, 없으면 워치리스트 첫 종목을 연다
+  const urlCode = new URLSearchParams(location.search).get("code");
+  if (urlCode && /^\d{6}$/.test(urlCode)) {
+    if (!state.companyIndex.some((c) => c.code === urlCode) && !state.watchlistCodes.has(urlCode)) {
+      // 인덱스에 없어도(우선주·ETF) 직접 조회로 표시
+      renderResultList([{ code: urlCode, name: urlCode, sector: "코드 직접조회", has_detail: false, direct: true }]);
+    }
+    selectStock(urlCode);
+  } else if (state.watchlist.length) {
+    selectStock(state.watchlist[0].code);
+  }
 }
 
 init();
