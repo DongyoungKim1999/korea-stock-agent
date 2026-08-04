@@ -97,7 +97,10 @@ function renderResultList(items) {
     const hasDetail = item.has_detail !== false;
     const li = document.createElement("li");
     li.className = "result-item" + (item.code === state.currentCode ? " active" : "");
-    const tag = hasDetail
+    if (item.direct) li.dataset.direct = "1";
+    const tag = item.direct
+      ? `<span class="r-tag r-tag-muted">코드 직접조회</span>`
+      : hasDetail
       ? `<span class="r-tag">${item.sector || "상세분석 지원"}</span>`
       : `<span class="r-tag r-tag-muted">상세분석 미지원</span>`;
     li.innerHTML = `
@@ -140,6 +143,12 @@ async function fillPreview(code, span) {
   const cache = state.quotePreviewCache;
   const q = cache[code] !== undefined ? cache[code] : (cache[code] = await fetchQuote(code));
   if (!q || q.price == null) return;
+  // 코드 직접조회 항목은 이름이 코드로만 떠 있으니 라이브 데이터의 종목명으로 채운다
+  const li = span.closest(".result-item");
+  if (li && li.dataset.direct && q.name) {
+    const t = li.querySelector(".r-title");
+    if (t) t.innerHTML = `${q.name} <span style="color:var(--text-muted);font-weight:400">${code}</span>`;
+  }
   const up = q.change_pct > 0, down = q.change_pct < 0;
   const c = up ? "var(--candle-up)" : down ? "var(--candle-down)" : "var(--text-muted)";
   const arr = up ? "▲" : down ? "▼" : "–";
@@ -168,6 +177,14 @@ function wireSearch() {
     );
     // 상세분석 지원 종목을 검색결과 상단에 먼저 보여준다
     filtered.sort((a, b) => (b.has_detail !== false) - (a.has_detail !== false));
+
+    // 숫자 코드를 치면 인덱스에 없어도 직접 조회 항목을 최상단에 추가한다 — 우선주·ETF 등
+    // DART 기업목록엔 없지만 네이버 시세/차트는 되는 종목까지 코드로 조회 가능하게 하는 폴백.
+    const asCode = /^\d{1,6}$/.test(input.value.trim()) ? input.value.trim().padStart(6, "0") : null;
+    if (asCode && !filtered.some((s) => s.code === asCode)) {
+      filtered.unshift({ code: asCode, name: asCode, sector: "코드 직접조회", has_detail: false, direct: true });
+    }
+
     updateSearchSummary(filtered.length, input.value);
     renderResultList(filtered);
     if (filtered.length === 0) {
@@ -586,7 +603,9 @@ function renderSummaryStrip(code) {
   }
 
   const hasAnalysis = okT || okF;
-  document.getElementById("ss-name").textContent = `${stockName(code)} 종합`;
+  // 코드 직접조회 종목은 인덱스에 이름이 없으니 라이브 시세의 종목명을 우선 사용
+  const nm = (state.currentQuote && state.currentQuote.name) || stockName(code);
+  document.getElementById("ss-name").textContent = `${nm} 종합`;
   document.getElementById("ss-tags").innerHTML = tags.length
     ? tags.map((x) => `<span class="ss-tag ss-${x.c}">${x.t}</span>`).join("")
     : (hasAnalysis ? `<span class="ss-tag">특이 신호 없음</span>` : "");
