@@ -396,7 +396,7 @@ function renderFundamental(data) {
     document.getElementById("fin-table").innerHTML = "";
     document.getElementById("fund-summary-list").innerHTML =
       data && data.status === "unsupported"
-        ? '<li>재무 상세분석(DART 기반)은 우량주 120종목만 지원합니다. 이 종목은 기술적분석·시세·목표주가로 확인하세요.</li>'
+        ? '<li>이 종목은 DART 재무제표가 없어 재무분석을 제공하지 않습니다(ETF·우선주 등). 기술적분석·시세·목표주가는 확인할 수 있습니다.</li>'
         : "";
     document.getElementById("fund-footnote").textContent = "";
     renderValuation(null);
@@ -689,6 +689,7 @@ function renderQuote(q) {
   }
   const rl = recommLabel(q.recomm_mean);
   if (rl) bits.push(`투자의견 <b>${rl}</b> (${q.recomm_mean.toFixed(1)})`);
+  if (q.per) bits.push(`PER ${q.per}`);
   if (q.market_cap_text) bits.push(`시총 ${q.market_cap_text}`);
   if (q.foreign_rate) bits.push(`외인 ${q.foreign_rate}`);
   cEl.innerHTML = bits.join(" · ") + (bits.length ? ' <span class="ss-src">· 네이버 포털 기준</span>' : "");
@@ -753,34 +754,37 @@ async function loadOnDemandTechnical(code) {
   }
 }
 
-async function selectStock(code) {
-  state.currentCode = code;
-  renderResultList(state.lastRenderedItems.length ? state.lastRenderedItems : state.watchlist);
-  startQuoteAutoRefresh(code); // 라이브 시세는 전종목 대상(심층분석 지원 여부와 무관)
-
-  if (!state.watchlistCodes.has(code)) {
-    // 워치리스트 밖이라 재무(DART)는 미지원이지만, 기술적분석은 네이버 차트로 즉석 계산(전종목).
-    renderFundamental({ status: "unsupported" });
-    renderSummaryStrip(code); // 미지원 종목도 strip(이름+라이브 시세)은 표시
-    await loadOnDemandTechnical(code);
-    return;
-  }
-
-  try {
-    if (!state.techCache[code]) state.techCache[code] = await loadJSON(`data/technical/${code}.json`);
-    renderTechnical(state.techCache[code]);
-  } catch (e) {
-    renderTechnical({ status: "error", reason: "데이터 파일을 찾을 수 없습니다" });
-  }
-
+// 재무 기본적분석은 전종목 pre-generated(업종평균) — 어떤 코드든 fundamental JSON을 로드한다.
+// 없으면(ETF·우선주 등 DART 미등록) 미지원 안내.
+async function loadFundamental(code) {
   try {
     if (!state.fundCache[code]) state.fundCache[code] = await loadJSON(`data/fundamental/${code}.json`);
     renderFundamental(state.fundCache[code]);
   } catch (e) {
-    renderFundamental({ status: "error", reason: "데이터 파일을 찾을 수 없습니다" });
+    renderFundamental({ status: "unsupported" });
   }
+  if (state.currentCode === code) renderSummaryStrip(code); // 재무 태그 반영
+}
 
+async function selectStock(code) {
+  state.currentCode = code;
+  renderResultList(state.lastRenderedItems.length ? state.lastRenderedItems : state.watchlist);
+  startQuoteAutoRefresh(code); // 라이브 시세는 전종목 대상
+  loadFundamental(code);       // 재무 기본적분석도 전종목 대상(업종평균)
   renderSummaryStrip(code);
+
+  if (state.watchlistCodes.has(code)) {
+    // 워치리스트: 사전생성 기술적분석(결정론적 점수 포함) 사용
+    try {
+      if (!state.techCache[code]) state.techCache[code] = await loadJSON(`data/technical/${code}.json`);
+      renderTechnical(state.techCache[code]);
+    } catch (e) {
+      renderTechnical({ status: "error", reason: "데이터 파일을 찾을 수 없습니다" });
+    }
+  } else {
+    // 그 외 전종목: 네이버 차트로 즉석 계산
+    await loadOnDemandTechnical(code);
+  }
 }
 
 function wireRangeTabs() {
