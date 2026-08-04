@@ -226,19 +226,56 @@
       <div class="data-warning" id="fund-warning"></div>
     </section>
 
-    <aside class="panel panel-chat" aria-label="AI 투자 어시스턴트">
-      <div class="panel-head">
-        <h2>AI 투자 어시스턴트 <span class="beta-tag">Beta</span></h2>
-        <button class="ghost-btn small" id="assistant-reset" title="대화 초기화">↻ 초기화</button>
-      </div>
-      <div class="chat-log" id="assistant-log">
-        <div class="chat-empty" id="chat-empty-hint">보고 있는 종목이나 분석 결과에 대해 궁금한 점을 물어보세요.</div>
-      </div>
-      <div class="chat-input-row">
-        <input type="text" id="assistant-input" placeholder="메시지를 입력하세요..." />
-        <button class="send-btn" id="assistant-send" title="전송">➤</button>
-      </div>
-    </aside>
+    <div class="right-col">
+
+      <section class="panel panel-valuation" aria-label="밸류에이션 계산기">
+        <div class="panel-head">
+          <h2>내 밸류에이션 계산기 <span class="info-dot" title="2단계 FCFF DCF: 잉여현금흐름(FCFF)이 고성장기 동안 성장하다가 이후 영구성장률로 수렴한다고 가정하고, 할인율(WACC)로 현재가치를 구해 적정주가를 계산합니다. 가정을 바꿔가며 '내 예상 주가'를 뽑아보세요.">ⓘ</span></h2>
+          <button class="ghost-btn small" id="valc-toggle" title="접기/펼치기">▾</button>
+        </div>
+        <div class="valc-body" id="valc-body">
+          <div class="valc-grid">
+            <label>FCFF 시작값 <small>(억원/년)</small>
+              <input type="number" id="valc-fcff" placeholder="직전연도 잉여현금흐름" step="any"></label>
+            <label>고성장률 <small>(%/년)</small>
+              <input type="number" id="valc-g1" value="10" step="any"></label>
+            <label>고성장 기간 <small>(년)</small>
+              <input type="number" id="valc-years" value="5" step="1" min="1" max="20"></label>
+            <label>영구성장률 <small>(%)</small>
+              <input type="number" id="valc-gt" value="2.5" step="any"></label>
+            <label>할인율 WACC <small>(%)</small>
+              <input type="number" id="valc-wacc" value="9" step="any"></label>
+            <label>순부채 <small>(억원, 순현금은 −)</small>
+              <input type="number" id="valc-netdebt" value="0" step="any"></label>
+            <label>발행주식수 <small>(백만주)</small>
+              <input type="number" id="valc-shares" placeholder="자동" step="any"></label>
+            <label>현재가 <small>(원, 자동)</small>
+              <input type="number" id="valc-price" placeholder="자동" step="any"></label>
+          </div>
+          <div class="valc-result" id="valc-result">
+            <div class="valc-fair">적정주가 <b id="valc-fair">-</b></div>
+            <div class="valc-upside" id="valc-upside"></div>
+            <div class="valc-breakdown" id="valc-breakdown"></div>
+          </div>
+          <div class="valc-note">가정에 따른 참고 계산일 뿐, 매수·매도 권유가 아닙니다.</div>
+        </div>
+      </section>
+
+      <aside class="panel panel-chat" aria-label="AI 투자 어시스턴트">
+        <div class="panel-head">
+          <h2>AI 투자 어시스턴트 <span class="beta-tag">Beta</span></h2>
+          <button class="ghost-btn small" id="assistant-reset" title="대화 초기화">↻ 초기화</button>
+        </div>
+        <div class="chat-log" id="assistant-log">
+          <div class="chat-empty" id="chat-empty-hint">보고 있는 종목이나 분석 결과에 대해 궁금한 점을 물어보세요.</div>
+        </div>
+        <div class="chat-input-row">
+          <input type="text" id="assistant-input" placeholder="메시지를 입력하세요..." />
+          <button class="send-btn" id="assistant-send" title="전송">➤</button>
+        </div>
+      </aside>
+
+    </div>
 
   </main>
 

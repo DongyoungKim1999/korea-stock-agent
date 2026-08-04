@@ -105,7 +105,7 @@ def compute_technical_score(indicators: dict) -> dict:
 
     weighted = TREND_WEIGHT * trend + MOMENTUM_WEIGHT * momentum + VOLUME_WEIGHT * volume_s + CANDLE_WEIGHT * candle
     raw = 3 + weighted
-    score = round(_clamp(raw, 1, 5))
+    score = round(_clamp(raw, 1, 5), 1)  # 소수점 첫째자리까지(정수 반올림 아님)
 
     return {
         "score": score,

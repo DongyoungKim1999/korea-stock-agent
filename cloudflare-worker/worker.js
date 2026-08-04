@@ -103,8 +103,13 @@ async function handleQuote(code, origin) {
       for (const it of g.totalInfos || []) infos[it.code] = it.value;
       out.market_cap_text = infos.marketValue || null;
       out.foreign_rate = infos.foreignRate || null;
-      out.per = infos.per || null;
+      out.per = infos.per || null;             // 현재 PER(최근 실적 기준)
       out.eps = infos.eps || null;
+      out.cns_per = infos.cnsPer || null;      // 컨센서스(forward) PER — 추정이익 기준
+      out.cns_eps = infos.cnsEps || null;      // 컨센서스(추정) EPS
+      out.pbr = infos.pbr || null;
+      out.bps = infos.bps || null;
+      out.dividend_yield = infos.dividendYieldRatio || null;  // 시가배당률
       out.week52_high = num(infos.highPriceOf52Weeks);
       out.week52_low = num(infos.lowPriceOf52Weeks);
       const c = g.consensusInfo;

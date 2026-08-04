@@ -229,7 +229,8 @@ function _score(ind) {
   if (ind.volume.abnormally_low) { trend *= 0.7; momentum *= 0.7; }
   const weighted = 0.4 * trend + 0.3 * momentum + 0.2 * volume + 0.1 * candle;
   return {
-    score: Math.round(_clamp(3 + weighted, 1, 5)),
+    score: Math.round(_clamp(3 + weighted, 1, 5) * 10) / 10, // 소수점 첫째자리까지
+
     category_subscores: { trend: _round(trend, 3), momentum_volatility: _round(momentum, 3), volume: _round(volume, 3), candle: _round(candle, 3) },
   };
 }

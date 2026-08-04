@@ -353,9 +353,34 @@ html, body {
 
 .panel-empty { font-size: 12px; color: var(--text-muted); padding: 20px 6px; text-align: center; }
 
+/* ---------- 우측 컬럼(밸류에이션 계산기 + AI 어시스턴트) ---------- */
+
+.right-col { display: flex; flex-direction: column; gap: 16px; min-height: 0; }
+
+.panel-valuation { flex-shrink: 0; }
+.valc-body { margin-top: 4px; }
+.valc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px; }
+.valc-grid label { display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: var(--text-secondary); }
+.valc-grid label small { color: var(--text-muted); font-weight: 400; }
+.valc-grid input {
+  background: var(--bg-page); border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+  color: var(--text-primary); font-size: 12.5px; padding: 6px 8px; font-family: var(--font);
+  font-variant-numeric: tabular-nums; width: 100%;
+}
+.valc-grid input:focus { outline: none; border-color: var(--series-1); }
+.valc-result { margin-top: 12px; padding: 10px 12px; background: var(--bg-card-alt); border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.valc-fair { font-size: 12px; color: var(--text-secondary); }
+.valc-fair b { font-size: 20px; color: var(--text-primary); font-weight: 800; font-variant-numeric: tabular-nums; margin-left: 4px; }
+.valc-upside { font-size: 12px; color: var(--text-secondary); margin-top: 4px; }
+.valc-upside b { font-variant-numeric: tabular-nums; }
+.valc-breakdown { font-size: 11px; color: var(--text-secondary); margin-top: 6px; }
+.valc-note { font-size: 10px; color: var(--text-muted); margin-top: 8px; }
+
+.ss-fwd { font-size: 11px; color: var(--good); }
+
 /* ---------- AI 어시스턴트 패널 (우측 컬럼) ---------- */
 
-.panel-chat { display: flex; flex-direction: column; min-height: 0; }
+.panel-chat { display: flex; flex-direction: column; min-height: 0; flex: 1; }
 .beta-tag { background: var(--series-1); color: #fff; font-size: 9px; padding: 1px 6px; border-radius: 4px; font-weight: 700; margin-left: 4px; }
 
 .chat-log {

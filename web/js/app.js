@@ -254,7 +254,7 @@ function renderTechnical(data) {
     return;
   }
 
-  document.getElementById("tech-score-num").textContent = data.score ?? "-";
+  document.getElementById("tech-score-num").textContent = data.score != null ? data.score.toFixed(1) : "-";
   const badge = scoreBadge(data.score);
   const badgeEl = document.getElementById("tech-score-badge");
   badgeEl.textContent = badge.text;
@@ -630,6 +630,87 @@ function buildOneliner(tags) {
   return `${body}. (투자 판단·책임은 본인에게 있으며, 매수·매도 권유가 아닌 특성 요약입니다.)`;
 }
 
+// ---------- 밸류에이션 계산기 (2단계 FCFF DCF) ----------
+
+function _valcNum(id) {
+  const v = parseFloat(document.getElementById(id).value);
+  return Number.isFinite(v) ? v : null;
+}
+
+function computeValuation() {
+  const fcff0 = _valcNum("valc-fcff");        // 억원
+  const g1 = _valcNum("valc-g1");             // %
+  const years = _valcNum("valc-years");
+  const gt = _valcNum("valc-gt");             // %
+  const wacc = _valcNum("valc-wacc");         // %
+  const netDebt = _valcNum("valc-netdebt") ?? 0; // 억원
+  const shares = _valcNum("valc-shares");     // 백만주
+  const price = _valcNum("valc-price");       // 원
+
+  const fairEl = document.getElementById("valc-fair");
+  const upEl = document.getElementById("valc-upside");
+  const bdEl = document.getElementById("valc-breakdown");
+
+  if (fcff0 == null || g1 == null || years == null || gt == null || wacc == null || shares == null) {
+    fairEl.textContent = "-"; upEl.textContent = ""; bdEl.textContent = "FCFF·성장률·할인율·주식수를 입력하면 적정주가가 계산됩니다.";
+    return;
+  }
+  const r = wacc / 100, gr = g1 / 100, gtr = gt / 100, N = Math.round(years);
+  if (r <= gtr) {
+    fairEl.textContent = "-"; upEl.textContent = ""; bdEl.innerHTML = `<span style="color:var(--warning)">할인율(WACC)은 영구성장률보다 커야 합니다.</span>`;
+    return;
+  }
+  // 1단계: 고성장기 FCFF 현재가치 합
+  let pvExplicit = 0, fcff = fcff0;
+  for (let t = 1; t <= N; t++) {
+    fcff = fcff0 * Math.pow(1 + gr, t);
+    pvExplicit += fcff / Math.pow(1 + r, t);
+  }
+  // 2단계: 영구성장 잔존가치(고든 성장모형) → 현재가치
+  const fcffN = fcff0 * Math.pow(1 + gr, N);
+  const terminal = (fcffN * (1 + gtr)) / (r - gtr);
+  const pvTerminal = terminal / Math.pow(1 + r, N);
+
+  const ev = pvExplicit + pvTerminal;        // 기업가치(억원)
+  const equity = ev - netDebt;               // 주주가치(억원)
+  const perShare = (equity * 100) / shares;  // 원 (억원*1e8 / (백만주*1e6) = 억*100/백만주)
+
+  fairEl.textContent = `${Math.round(perShare).toLocaleString("ko-KR")}원`;
+  const fmt = (v) => (Math.abs(v) >= 10000 ? `${(v / 10000).toFixed(1)}조` : `${Math.round(v).toLocaleString("ko-KR")}억`);
+  bdEl.innerHTML = `기업가치 ${fmt(ev)} · 주주가치 ${fmt(equity)} <span style="color:var(--text-muted)">(잔존가치 비중 ${Math.round(pvTerminal / ev * 100)}%)</span>`;
+
+  if (price && perShare > 0) {
+    const upside = (perShare / price - 1) * 100;
+    const c = upside >= 0 ? "var(--good)" : "var(--critical)";
+    upEl.innerHTML = `현재가 ${Math.round(price).toLocaleString("ko-KR")} 대비 <b style="color:${c}">${upside >= 0 ? "+" : ""}${upside.toFixed(0)}%</b> ${upside >= 0 ? "(저평가 여력)" : "(고평가)"}`;
+  } else {
+    upEl.textContent = "";
+  }
+}
+
+function autofillValuation(code) {
+  // 현재가·발행주식수를 선택 종목 데이터로 채운다(사용자가 덮어쓸 수 있음).
+  const q = state.currentQuote;
+  const fund = state.fundCache[code];
+  const priceEl = document.getElementById("valc-price");
+  const sharesEl = document.getElementById("valc-shares");
+  if (q && q.price != null) priceEl.value = Math.round(q.price);
+  const val = fund && fund.status === "ok" ? fund.valuation : null;
+  if (val && val.shares_estimated) sharesEl.value = (val.shares_estimated / 1e6).toFixed(1);
+  computeValuation();
+}
+
+function wireValuationCalc() {
+  ["valc-fcff", "valc-g1", "valc-years", "valc-gt", "valc-wacc", "valc-netdebt", "valc-shares", "valc-price"]
+    .forEach((id) => document.getElementById(id).addEventListener("input", computeValuation));
+  const toggle = document.getElementById("valc-toggle");
+  const body = document.getElementById("valc-body");
+  toggle.addEventListener("click", () => {
+    body.hidden = !body.hidden;
+    toggle.textContent = body.hidden ? "▸" : "▾";
+  });
+}
+
 // ---------- 라이브 시세 (Worker /quote 프록시, 네이버 포털) ----------
 
 let _quoteTimer = null;
@@ -689,7 +770,12 @@ function renderQuote(q) {
   }
   const rl = recommLabel(q.recomm_mean);
   if (rl) bits.push(`투자의견 <b>${rl}</b> (${q.recomm_mean.toFixed(1)})`);
-  if (q.per) bits.push(`PER ${q.per}`);
+  if (q.per) {
+    // 현재 PER + 컨센서스(forward) PER — 추정이익 기준이라 실적 성장 종목은 fwd가 크게 낮음
+    const fwd = q.cns_per ? ` <span class="ss-fwd" title="컨센서스(추정이익) 기준 forward PER">(fwd ${q.cns_per})</span>` : "";
+    bits.push(`PER ${q.per}${fwd}`);
+  }
+  if (q.dividend_yield && q.dividend_yield !== "0.00%") bits.push(`배당 ${q.dividend_yield}`);
   if (q.market_cap_text) bits.push(`시총 ${q.market_cap_text}`);
   if (q.foreign_rate) bits.push(`외인 ${q.foreign_rate}`);
   cEl.innerHTML = bits.join(" · ") + (bits.length ? ' <span class="ss-src">· 네이버 포털 기준</span>' : "");
@@ -712,7 +798,8 @@ function startQuoteAutoRefresh(code) {
   state.currentQuote = null;
   renderQuote(null); // 이전 종목 시세 지우기
   renderRiskReward(code);
-  refreshQuote(code); // 즉시 1회
+  // 즉시 1회 — 시세가 오면 계산기 현재가/주식수를 자동 채운다(최초 1회만, 이후 60초 갱신은 계산기 안 건드림)
+  refreshQuote(code).then(() => { if (state.currentCode === code) autofillValuation(code); });
   // 장중에는 60초마다 갱신(장마감이면 자동갱신 불필요)
   _quoteTimer = setInterval(() => {
     if (state.currentCode !== code) { clearInterval(_quoteTimer); _quoteTimer = null; return; }
@@ -763,7 +850,7 @@ async function loadFundamental(code) {
   } catch (e) {
     renderFundamental({ status: "unsupported" });
   }
-  if (state.currentCode === code) renderSummaryStrip(code); // 재무 태그 반영
+  if (state.currentCode === code) { renderSummaryStrip(code); autofillValuation(code); } // 재무 태그 + 계산기 주식수 자동채움
 }
 
 async function selectStock(code) {
@@ -910,6 +997,7 @@ async function init() {
   wireRangeTabs();
   wireAssistant();
   wireModal();
+  wireValuationCalc();
 
   if (state.watchlist.length) selectStock(state.watchlist[0].code);
 }
