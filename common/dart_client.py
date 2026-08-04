@@ -15,6 +15,7 @@ from common.config import (
     TTL_CORP_CODE_MAP,
     TTL_FILED_STATEMENT,
     TTL_FINANCIAL_STATEMENT,
+    TTL_NO_STATEMENT,
     has_dart_key,
 )
 from common.retry import retry_with_backoff
@@ -144,7 +145,16 @@ def _fetch_statement(corp_code: str, bsns_year: str, reprt_code: str, fs_div: st
 
 
 def get_recent_financial_statements(corp_code: str, periods_needed: int = 4) -> list[dict]:
-    """최근 N개 분기의 전체 재무제표 원자료. 연결(CFS) 우선, 없으면 별도(OFS)로 재시도."""
+    """최근 N개 분기의 전체 재무제표 원자료. 연결(CFS) 우선, 없으면 별도(OFS)로 재시도.
+
+    '최근 재무제표 없음'(상폐·스팩·비표준 결산 등)으로 최근 확인된 종목은 음성캐시로 재조회를 건너뛴다
+    — 전종목 스캔 시 종목당 최대 8콜씩 헛되이 쓰던 걸 막는다. TTL(5일)이 지나면 재확인되어 신규 공시가
+    며칠 내 반영된다.
+    """
+    neg_key = f"dart_no_fs_{corp_code}_{periods_needed}"
+    if cache.read(neg_key, TTL_NO_STATEMENT) is not None:
+        return []  # 최근 '재무제표 없음' 확인됨 — DART 재조회 스킵
+
     results = []
     for bsns_year, reprt_code in _recent_report_periods(count=periods_needed + 3):
         period_data = None
@@ -162,6 +172,9 @@ def get_recent_financial_statements(corp_code: str, periods_needed: int = 4) -> 
             results.append(period_data)
         if len(results) >= periods_needed:
             break
+
+    if not results:
+        cache.write(neg_key, {"no_statements": True})  # 음성캐시(5일) — 다음 실행부터 헛조회 안 함
     return results
 
 
