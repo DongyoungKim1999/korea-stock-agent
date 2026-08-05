@@ -83,6 +83,35 @@ def _to_float(value) -> float | None:
     return f if f == f else None  # NaN 제거
 
 
+# 이자부부채(차입금·사채·리스부채) 항목 — 순부채 = 이자부부채 − 현금 계산용.
+# '부채총계 − 현금'은 매입채무 등 비이자부채까지 포함해 과대계상되므로, 실제 금융부채만 합산한다.
+_DEBT_NAME_PATTERNS = ("단기차입금", "장기차입금", "유동성장기부채", "유동성사채", "유동성장기차입금",
+                       "사채", "전환사채", "신주인수권부사채", "리스부채", "금융리스부채", "유동차입금")
+_DEBT_ID_HINTS = ("Borrowings", "BondsIssued", "LeaseLiabilities")
+
+
+def _sum_interest_bearing_debt(accounts: list[dict]) -> float | None:
+    """재무상태표(BS)에서 이자부부채 라인아이템 합. 못 찾으면 None(→ 순현금으로 간주)."""
+    total, found = 0.0, False
+    for acc in accounts:
+        if acc.get("sj_div") != "BS":
+            continue
+        nm = (acc.get("account_nm") or "").replace(" ", "")
+        aid = acc.get("account_id") or ""
+        name_hit = any(p in nm for p in _DEBT_NAME_PATTERNS)
+        id_hit = any(h in aid for h in _DEBT_ID_HINTS)
+        if not (name_hit or id_hit):
+            continue
+        # 현금흐름·증감·주석성 문구가 섞인 항목은 제외(BS 라인만 대상이지만 방어적으로)
+        if name_hit and any(x in nm for x in ("증가", "감소", "상환", "발행", "이자")):
+            continue
+        v = _to_float(acc.get("thstrm_amount"))
+        if v is not None and v > 0:
+            total += v
+            found = True
+    return total if found else None
+
+
 def _amount_from(acc: dict, amount_key: str) -> float | None:
     """DART는 분기보고서(11013/11012/11014)의 손익계산서 항목에 한해 thstrm_amount/frmtrm_amount
     대신(또는 그와 별개로) thstrm_add_amount/frmtrm_add_amount(연초 누계)를 함께 내려준다 —
@@ -317,9 +346,15 @@ def compute_quality_valuation(periods: list[dict], latest_close: float | None) -
     fcff = None
     if ocf is not None:
         fcff = (ocf - abs(capex)) * factor2 if capex is not None else ocf * factor2
-    liabilities = t.get("liabilities")
+    # 순부채 = 이자부부채(차입금·사채·리스부채) − 현금. 이자부부채를 못 찾으면 현금만큼 순현금으로 본다.
     cash = t.get("cash")
-    net_debt = (liabilities - cash) if (liabilities is not None and cash is not None) else None
+    debt = _sum_interest_bearing_debt(latest["accounts"])
+    if debt is not None:
+        net_debt = debt - (cash or 0)
+    elif cash is not None:
+        net_debt = -cash  # 이자부부채 미검출 → 순현금
+    else:
+        net_debt = None
     to_eok = lambda v: round(v / 1e8, 1) if v is not None else None  # 원 → 억원
     valuation_inputs = {
         "fcff_eok": to_eok(fcff),          # 연환산 잉여현금흐름(근사, 억원)
