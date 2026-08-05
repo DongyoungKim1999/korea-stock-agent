@@ -45,24 +45,10 @@ def load_universe() -> list[dict]:
     return [{"code": c["code"], "name": c["name"]} for c in data.get("companies", [])]
 
 
-def normalized_fcff_eok(periods: list[dict]) -> float | None:
-    """최근 여러 사업연도의 FCFF(≈영업활동현금흐름−CapEx, 연간이라 연환산 없음)를 평균해 정규화한다.
-    단일 분기·단일 연도를 그대로 쓰면 경기민감주에서 크게 왜곡되므로(문서화된 DCF 실수) 평균으로 완화."""
-    vals = []
-    for p in periods:
-        raw = compute_ratios.extract_raw_amounts(p["accounts"])
-        ocf = raw["operating_cash_flow"]["thstrm"]
-        capex = raw["capex"]["thstrm"]
-        if ocf is not None:
-            vals.append(ocf - abs(capex) if capex is not None else ocf)
-    if not vals:
-        return None
-    return round((sum(vals) / len(vals)) / 1e8, 1)  # 원 → 억원 평균
-
-
 def fetch_raw(entry: dict) -> dict:
     """한 종목의 최근 연간 보고서(최대 3개)로 원시 비율/퀄리티/밸류에이션 + 업종코드를 산출.
-    분기 ×N 연환산의 ROE/FCFF 왜곡을 피하려 '연간 기준'을 쓰고, FCFF는 최근 연도들 평균으로 정규화한다."""
+    분기 ×N 연환산의 ROE/FCFF 왜곡을 피하려 '연간 기준'을 쓴다. FCFF 시작값은 최신연도(현재) 기준이며,
+    3개년은 실적추이(earnings_trend)·TTM 계산에 쓰인다."""
     code, name = entry["code"], entry["name"]
     try:
         fetched = fetch_financials.fetch(code, periods=3, annual_only=True)  # 최근 3개 사업연도(연간)
@@ -75,11 +61,10 @@ def fetch_raw(entry: dict) -> dict:
     raw_ratios = compute_ratios.compute_period_ratios(latest["accounts"])
     latest_close = gf.read_latest_close(code)  # 워치리스트만 technical JSON 존재 → 대부분 None(밸류에이션은 라이브 시세로 대체)
     qv = compute_ratios.compute_quality_valuation(fetched["periods"], latest_close)
-    # FCFF는 최근 연도들 평균으로 정규화(단일 연도 왜곡 완화)
-    if qv.get("valuation_inputs") is not None:
-        nf = normalized_fcff_eok(fetched["periods"])
-        if nf is not None:
-            qv["valuation_inputs"]["fcff_eok"] = nf
+    # FCFF 시작값은 '현재(최신 사업연도) FCFF'를 그대로 쓴다. compute_quality_valuation이 이미
+    # periods[0](최신연도)의 영업현금흐름−CapEx를 fcff_eok에 넣어준다. 과거 3년 평균으로 정규화하면
+    # 경기민감주(반도체 등)에서 직전 불황연도가 끌어내려 시작값이 실제보다 훨씬 작게 나오므로,
+    # 사용자가 '현재 기준'에서 출발해 직접 가정을 조정하도록 정규화 덮어쓰기를 제거했다.
     # 배당·실적추이를 전 종목에 채운다(과거엔 워치리스트 120만 → 전종목 확대해 분석 격차 제거).
     # 병렬 fetch_raw 안에서 계산해 순차 build_output이 네트워크 대기 없이 끝나게 한다.
     # earnings_trend는 '이미 받아둔 연간'으로 계산해 DART 재호출 0, dividend는 최신연도 1콜(확정분
