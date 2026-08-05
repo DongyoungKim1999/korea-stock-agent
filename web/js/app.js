@@ -455,7 +455,7 @@ const RATIO_LABELS = {
   revenue_growth_yoy: "매출액증가율(%)", operating_income_growth_yoy: "영업이익증가율(%)", net_income_growth_yoy: "순이익증가율(%)",
   asset_turnover: "총자산회전율(회)", receivables_turnover: "매출채권회전율(회)", inventory_turnover: "재고자산회전율(회)",
 };
-const BASIS_LABELS = { industry_average: "동일업종 평균", market_average_fallback: "시장 전체 평균(대체)", unavailable: "비교불가" };
+const BASIS_LABELS = { industry_average: "동일업종 중앙값", market_average_fallback: "시장 전체 중앙값(대체)", unavailable: "비교불가" };
 
 function fmtRatio(v) { return v == null ? "-" : (Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(1)); }
 
@@ -490,10 +490,16 @@ function renderFundamental(data) {
     document.getElementById(id).style.color = v == null ? "var(--text-muted)" : scoreStatusColor(v);
   });
 
-  document.getElementById("fund-table-title").textContent = `주요 재무 지표 (${data.latest_period ? data.latest_period.bsns_year + "년" : ""})`;
+  const byr = data.latest_period ? Number(data.latest_period.bsns_year) : null;
+  const stale = byr && (new Date().getFullYear() - byr) >= 2; // 최근 사업보고서가 2년 이상 과거 → 상폐/정지 의심
+  document.getElementById("fund-table-title").innerHTML =
+    `주요 재무 지표 (${byr ? byr + "년" : ""})` +
+    (stale
+      ? ` <span style="color:var(--critical);font-size:.72em;font-weight:700;border:1px solid var(--critical);border-radius:4px;padding:1px 5px;vertical-align:middle" title="최근 사업보고서가 ${byr}년입니다. 상장폐지·거래정지·결산변경 등으로 최신 재무가 없을 수 있어, 아래 지표는 과거 시점 값일 수 있습니다.">⚠ 최신 아님 · ${byr}년 기준</span>`
+      : "");
 
   const groups = [["안정성", data.stability], ["성장성", data.growth], ["활동성", data.activity]];
-  let rowsHtml = `<tr><th>지표</th><th>종목값</th><th>${data.comparison_basis === "industry_average" ? "업종평균" : "비교평균"}</th><th>상대위치</th></tr>`;
+  let rowsHtml = `<tr><th>지표</th><th>종목값</th><th>${data.comparison_basis === "industry_average" ? "업종중앙값" : "비교중앙값"}</th><th>상대위치</th></tr>`;
   for (const [cat, obj] of groups) {
     if (!obj) continue;
     for (const [key, v] of Object.entries(obj)) {

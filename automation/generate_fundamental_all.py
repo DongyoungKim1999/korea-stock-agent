@@ -12,6 +12,7 @@ DART 일일한도(2만) 안에서 며칠에 걸쳐 캐시가 차며 전종목이
 from __future__ import annotations
 
 import json
+import statistics
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -79,6 +80,14 @@ def fetch_raw(entry: dict) -> dict:
         nf = normalized_fcff_eok(fetched["periods"])
         if nf is not None:
             qv["valuation_inputs"]["fcff_eok"] = nf
+    # 배당·실적추이를 전 종목에 채운다(과거엔 워치리스트 120만 → 전종목 확대해 분석 격차 제거).
+    # 병렬 fetch_raw 안에서 계산해 순차 build_output이 네트워크 대기 없이 끝나게 한다.
+    # earnings_trend는 '이미 받아둔 연간'으로 계산해 DART 재호출 0, dividend는 최신연도 1콜(확정분
+    # 영구캐시라 최초 워밍 후 재호출 없음)이다.
+    dividend = gf.compute_dividend(
+        {"corp_code": fetched.get("corp_code"), "periods": fetched["periods"]}, latest_close
+    )
+    earnings_trend = gf.compute_earnings_trend(None, periods=fetched["periods"])
     return {
         "code": code, "name": name, "status": "ok",
         "corp_code": fetched.get("corp_code"),
@@ -86,13 +95,18 @@ def fetch_raw(entry: dict) -> dict:
         "ratios": {k: raw_ratios.get(k) for k in ALL_RATIO_KEYS},
         "quality": qv["quality"], "valuation": qv["valuation"], "valuation_inputs": qv.get("valuation_inputs"),
         "latest_period": {"bsns_year": latest.get("bsns_year"), "reprt_code": latest.get("reprt_code")},
-        "periods": fetched["periods"],  # 워치리스트 배당/추이용
+        "periods": fetched["periods"],
+        "dividend": dividend, "earnings_trend": earnings_trend,
         "warnings": fetched.get("warnings", []),
     }
 
 
 def industry_averages(records: list[dict]) -> tuple[dict, dict]:
-    """업종별·시장전체 각 비율의 평균. (industry_avg[induty][key], market_avg[key]) 반환."""
+    """업종별·시장전체 각 비율의 대표값(중앙값). (industry_avg[induty][key], market_avg[key]) 반환.
+
+    산술평균 대신 '중앙값'을 쓴다 — 자본잠식·적자 기업의 ROE가 500%↑/−300% 같은 극단값으로 나오는
+    종목이 실제로 수십 개 있어, 표본이 작은 업종(5~10종목)에서 한두 종목이 평균을 통째로 왜곡한다.
+    모든 상대점수가 이 벤치마크 대비라, 중앙값으로 두면 '전형적 동종기업' 기준이 되어 훨씬 견고하다."""
     by_ind: dict[str, dict[str, list[float]]] = {}
     market: dict[str, list[float]] = {k: [] for k in ALL_RATIO_KEYS}
     for r in records:
@@ -106,12 +120,12 @@ def industry_averages(records: list[dict]) -> tuple[dict, dict]:
                 bucket[k].append(v)
                 market[k].append(v)
 
-    def _avg(lst):
-        return sum(lst) / len(lst) if lst else None
+    def _median(lst):
+        return statistics.median(lst) if lst else None
 
-    industry_avg = {ind: {k: _avg(vs[k]) for k in ALL_RATIO_KEYS} for ind, vs in by_ind.items()}
+    industry_avg = {ind: {k: _median(vs[k]) for k in ALL_RATIO_KEYS} for ind, vs in by_ind.items()}
     industry_count = {ind: max((len(vs[k]) for k in ALL_RATIO_KEYS), default=0) for ind, vs in by_ind.items()}
-    market_avg = {k: _avg(market[k]) for k in ALL_RATIO_KEYS}
+    market_avg = {k: _median(market[k]) for k in ALL_RATIO_KEYS}
     return industry_avg, industry_count, market_avg
 
 
@@ -151,7 +165,7 @@ def build_output(r: dict, industry_avg: dict, industry_count: dict, market_avg: 
     out = {
         "status": "ok",
         "code": r["code"], "name": r["name"], "sector": sector or None,
-        "coverage": "full" if curated else "core",  # full=워치리스트(배당/추이 포함), core=전종목 기본
+        "coverage": "full" if curated else "core",  # 큐레이션 표식만(배당·실적추이는 이제 전종목 공통)
         "stability_score": scores.get("stability"),
         "growth_score": scores.get("growth"),
         "activity_score": scores.get("activity"),
@@ -167,11 +181,9 @@ def build_output(r: dict, industry_avg: dict, industry_count: dict, market_avg: 
         "valuation_inputs": r.get("valuation_inputs"),
         "warnings": r.get("warnings", []),
     }
-    # 워치리스트(우량주)는 배당·실적추이까지 추가
-    if curated:
-        target = {"status": "ok", "corp_code": r.get("corp_code"), "periods": r["periods"]}
-        out["dividend"] = gf.compute_dividend(target, gf.read_latest_close(r["code"]))
-        out["earnings_trend"] = gf.compute_earnings_trend(r.get("corp_code"))
+    # 배당·실적추이는 전 종목 공통(워치리스트/일반 분석 격차 제거) — fetch_raw가 이미 계산해둔 값을 붙인다
+    out["dividend"] = r.get("dividend")
+    out["earnings_trend"] = r.get("earnings_trend")
     return out
 
 

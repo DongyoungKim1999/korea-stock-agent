@@ -126,14 +126,19 @@ def compute_dividend(target: dict, latest_close: float | None) -> dict | None:
     }
 
 
-def compute_earnings_trend(corp_code: str | None) -> list[dict]:
-    """최근 4개 사업연도 매출·영업이익·순이익 + 영업/순이익률 추이(오름차순)."""
-    if not corp_code:
-        return []
-    try:
-        annuals = dart_client.get_annual_statements(corp_code, years=4)
-    except Exception:
-        return []
+def compute_earnings_trend(corp_code: str | None, periods: list[dict] | None = None) -> list[dict]:
+    """최근 사업연도 매출·영업이익·순이익 + 영업/순이익률 추이(오름차순).
+
+    periods를 주면 그걸 그대로 쓴다(전종목 파이프라인이 이미 받아둔 연간 3개년 재사용 → DART 재호출 0).
+    없으면 corp_code로 4개년을 새로 받는다(워치리스트 상세 경로)."""
+    if periods is None:
+        if not corp_code:
+            return []
+        try:
+            periods = dart_client.get_annual_statements(corp_code, years=4)
+        except Exception:
+            return []
+    annuals = [p for p in periods if p.get("reprt_code") == "11011"]
     trend = []
     for period in reversed(annuals):  # 최신→과거를 과거→최신으로
         raw = compute_ratios.extract_raw_amounts(period["accounts"])
