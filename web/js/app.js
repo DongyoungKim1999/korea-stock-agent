@@ -238,13 +238,17 @@ function displayIndicatorScore(kind, ind) {
 function renderTechnical(data) {
   const warnEl = document.getElementById("tech-warning");
   if (!data || data.status !== "ok") {
+    const delisted = data && data.status === "delisted";
     document.getElementById("tech-score-num").textContent = "-";
-    document.getElementById("tech-score-badge").textContent = data && data.status === "unsupported" ? "미지원 종목" : "데이터 없음";
+    document.getElementById("tech-score-badge").textContent =
+      data && data.status === "unsupported" ? "미지원 종목" : delisted ? "상폐·거래정지 추정" : "데이터 없음";
     document.getElementById("tech-score-sub").textContent = "";
     renderGauge(3);
     document.getElementById("price-chart").innerHTML =
       data && data.status === "unsupported"
         ? '<div class="panel-empty">이 종목은 상시분석 대상(시가총액 상위 우량주)이 아니라 상세분석을 제공하지 않습니다.<br>Claude Code 에이전트에게 직접 물어보시면 이 종목도 분석해 드립니다.</div>'
+        : delisted
+        ? '<div class="panel-empty">📉 상장폐지·거래정지되었거나 거래되지 않는 종목으로 보입니다.<br>시세·차트·재무 데이터가 없어 분석을 제공할 수 없습니다.</div>'
         : '<div class="panel-empty">기술적분석 데이터를 아직 생성하지 못했습니다</div>';
     document.getElementById("indicator-table").innerHTML = "";
     clearRadar();
@@ -1048,13 +1052,21 @@ async function loadOnDemandTechnical(code) {
   document.getElementById("price-chart").innerHTML = '<div class="panel-empty">차트를 불러오는 중…</div>';
   try {
     const res = await fetch(url, { cache: "no-store" });
-    const data = await res.json();
+    const data = await res.json().catch(() => null);
     if (state.currentCode !== code) return; // 종목이 바뀌었으면 무시
-    if (!res.ok || data.error || !Array.isArray(data.rows)) {
-      renderTechnical({ status: "error", reason: "차트를 불러오지 못했습니다 (잠시 후 다시 시도)" });
+    const rows = data && Array.isArray(data.rows) ? data.rows : null;
+    if (!rows || rows.length === 0) {
+      // 캔들이 하나도 없음. 서버가 본문(JSON)으로 '데이터 없음/부족'을 명시적으로 응답했다면
+      // (상폐주는 HTTP 502여도 {error:'차트 데이터 부족', rows:0} 형태로 온다) 상장폐지·거래정지·
+      // 비거래 종목이다(위다스 등). 본문 파싱조차 실패(data=null)면 네트워크 일시 오류로 본다.
+      if (data && (data.error || "rows" in data)) {
+        renderTechnical({ status: "delisted", reason: "시세·차트 데이터가 없습니다 — 상장폐지·거래정지되었거나 거래되지 않는 종목으로 보입니다." });
+      } else {
+        renderTechnical({ status: "error", reason: "차트를 불러오지 못했습니다 (잠시 후 다시 시도)" });
+      }
       return;
     }
-    const tech = computeTechnicalFromRows(code, stockName(code), data.rows);
+    const tech = computeTechnicalFromRows(code, stockName(code), rows);
     state.techCache[code] = tech;
     renderTechnical(tech);
     renderSummaryStrip(code); // 기술 태그 반영
