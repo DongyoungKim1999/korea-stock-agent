@@ -15,6 +15,7 @@ from common.config import (
     TTL_CORP_CODE_MAP,
     TTL_FILED_STATEMENT,
     TTL_FINANCIAL_STATEMENT,
+    TTL_NO_ANNUAL,
     TTL_NO_STATEMENT,
     has_dart_key,
 )
@@ -235,8 +236,8 @@ def get_annual_statements(corp_code: str, years: int = 4) -> list[dict]:
     확정 공시분만 캐시하는 _fetch_statement를 재사용하므로 실행 간 재호출이 최소화된다.
     최근 연간이 하나도 없으면(상폐·신규 등) 음성캐시로 다음 실행부터 헛조회를 건너뛴다."""
     neg_key = f"dart_no_annual_{corp_code}_{years}"
-    if cache.read(neg_key, TTL_NO_STATEMENT) is not None:
-        return []
+    if cache.read(neg_key, TTL_NO_ANNUAL) is not None:
+        return []  # '연간 없음' 확인됨 — 3주간 재탐색 스킵(스팩·리츠 등 헛조회로 일일한도 잠식 방지)
     results: list[dict] = []
     year = dt.date.today().year - 1  # 최근 확정 사업연도 후보(사업보고서는 익년 3월말 제출)
     attempts = 0
