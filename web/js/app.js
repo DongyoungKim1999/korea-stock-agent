@@ -522,8 +522,7 @@ function renderFundamental(data) {
   document.getElementById("fund-summary-list").innerHTML = summary.map((s) => `<li>${s}</li>`).join("") || '<li>요약할 데이터가 부족합니다</li>';
 
   document.getElementById("fund-footnote").textContent =
-    `* 비교기준: ${BASIS_LABELS[data.comparison_basis] || data.comparison_basis} · 업종 민감도 조정: ` +
-    (data.sensitivity_applied ? Object.entries(data.sensitivity_applied).filter(([, v]) => v !== 1.0).map(([k, v]) => `${k}×${v}`).join(", ") || "없음" : "없음");
+    `* 비교기준: ${BASIS_LABELS[data.comparison_basis] || data.comparison_basis} (전 종목 동일 기준)`;
 
   warnEl.textContent = humanizeWarnings(data.warnings);
 }
@@ -715,12 +714,15 @@ function renderSummaryStrip(code) {
   const fs = q && q.f_score ? q.f_score : null;
   const weakQuality = q && ((q.roe_pct != null && q.roe_pct < 5) || (fs && fs.max_score && fs.score / fs.max_score < 4 / 9));
   // 밸류에이션 (PBR<1은 퀄리티 약하면 저평가가 아니라 가치함정)
+  // DART 역산값 우선, 없으면 라이브 시세 PER/PBR — core(비워치) 종목도 밸류 태그가 나오게(파리티).
   const val = okF ? fund.valuation : null;
-  if (val && val.basis === "eps_derived") {
-    if (val.pbr != null && val.pbr < 1) tags.push(weakQuality ? { t: "PBR<1 가치함정 주의", c: "warn" } : { t: "PBR<1 저평가", c: "good" });
-    else if (val.per != null && val.per > 0 && val.per < 10) tags.push({ t: "이익 대비 저평가", c: "good" });
-    else if (val.per != null && val.per > 40) tags.push({ t: "밸류에이션 부담", c: "warn" });
-  }
+  const quote = state.currentQuote;
+  const hasDartV = val && val.basis === "eps_derived";
+  const vpbr = hasDartV ? val.pbr : (quote ? _parseBae(quote.pbr) : null);
+  const vper = hasDartV ? val.per : (quote ? _parseBae(quote.per) : null);
+  if (vpbr != null && vpbr < 1) tags.push(weakQuality ? { t: "PBR<1 가치함정 주의", c: "warn" } : { t: "PBR<1 저평가", c: "good" });
+  else if (vper != null && vper > 0 && vper < 10) tags.push({ t: "이익 대비 저평가", c: "good" });
+  else if (vper != null && vper > 40) tags.push({ t: "밸류에이션 부담", c: "warn" });
   // 퀄리티
   if (fs && fs.max_score) {
     const r = fs.score / fs.max_score;
@@ -1146,9 +1148,12 @@ function appendChatMessage(role, content, extraClass = "") {
 
 function currentStockContext() {
   const code = state.currentCode;
-  if (!code || !state.watchlistCodes.has(code)) return null;
+  if (!code) return null;
   const tech = state.techCache[code];
   const fund = state.fundCache[code];
+  const quote = state.currentQuote;
+  // 전 종목 지원(파리티): 워치리스트가 아니어도 온디맨드 기술+전종목 재무+라이브 시세가 있으면 맥락 제공.
+  if ((!tech || tech.status !== "ok") && (!fund || fund.status !== "ok") && !quote) return null;
   const ind = tech && tech.status === "ok" ? tech.indicators : null;
   const risk = ind ? ind.risk : null;
   const levels = ind ? ind.levels : null;
@@ -1158,12 +1163,13 @@ function currentStockContext() {
   const trend = fund && fund.status === "ok" ? fund.earnings_trend : null;
   return {
     code,
-    name: (state.watchlist.find((w) => w.code === code) || {}).name,
-    technical_score: tech && tech.status === "ok" ? tech.score : null,
+    name: (quote && quote.name) || stockName(code),
+    live: quote ? { price: quote.price, change_pct: quote.change_pct, target_price: quote.target_price, per: quote.per, recomm_mean: quote.recomm_mean } : null,
+    technical_score: tech && tech.status === "ok" ? (tech._displayScore ?? tech.score) : null,
     fundamental_scores: fund && fund.status === "ok"
       ? { stability: fund.stability_score, growth: fund.growth_score, activity: fund.activity_score }
       : null,
-    valuation: val && val.basis === "eps_derived" ? { per: val.per, pbr: val.pbr } : null,
+    valuation: (val && val.basis === "eps_derived") ? { per: val.per, pbr: val.pbr } : (quote ? { per: _parseBae(quote.per), pbr: _parseBae(quote.pbr) } : null),
     quality: q ? { f_score: q.f_score && q.f_score.score, f_score_max: q.f_score && q.f_score.max_score, roe_pct: q.roe_pct, roa_pct: q.roa_pct } : null,
     risk: risk ? { annualized_volatility_pct: risk.annualized_volatility_pct, max_drawdown_pct: risk.max_drawdown_pct, week52_position_pct: risk.week52_position_pct } : null,
     support_resistance: levels ? { support: levels.support, resistance: levels.resistance } : null,
