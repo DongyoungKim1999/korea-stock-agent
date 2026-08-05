@@ -137,7 +137,13 @@ def _geometric_mean(values: list[float]) -> float | None:
 
 
 def _category_score(ratios: dict, keys: list[str], sensitivity: float) -> float | None:
-    values = [ratios[k]["relative_favorability"] for k in keys if ratios.get(k)]
+    # 개별 favorability를 [0.2,5] 밴드로 제한한 뒤 기하평균한다. 전년 매출이 0에 가까운 초소형주는
+    # 매출성장률이 +23,900% 같은 허수로 튀고, favorability(target/peer)가 무계라 수백~수천 배가 되어
+    # 지표 하나가 카테고리 점수를 5.0으로 독점해버린다(41종목이 이렇게 허위 5.0). 5배로 상한을 두면
+    # 한 지표가 최대 log(5)만 기여해 이상값이 점수를 지배하지 못한다. 부호혼합 케이스는 이미 [0,2]라
+    # 영향이 없고, 정상 비교(대개 5배 이내)도 그대로 유지된다. 밴드는 log 공간에서 1을 중심으로 대칭.
+    raw = [ratios[k]["relative_favorability"] for k in keys if ratios.get(k)]
+    values = [_clamp(v, 0.2, 5.0) for v in raw if v is not None]
     gm = _geometric_mean(values)
     if gm is None:
         return None
