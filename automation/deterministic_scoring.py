@@ -153,11 +153,15 @@ def _category_score(ratios: dict, keys: list[str], sensitivity: float) -> float 
 
 
 def sector_sensitivity(sector: str) -> dict:
-    return {
-        "stability": 1.3 if sector in CAPITAL_INTENSIVE_SECTORS else 1.0,
-        "growth": 1.3 if sector in GROWTH_SECTORS else 1.0,
-        "activity": 1.0,
-    }
+    """업종 민감도. 예전엔 자본집약 섹터의 안정성·성장섹터의 성장성을 1.3배 가중했다. 그러나 이 sector
+    라벨은 큐레이션된 워치리스트 120종목에만 있고(전종목은 DART 업종코드만 있는데, 지주회사 코드 64992
+    하나가 7개 섹터로 갈리는 등 코드→섹터 매핑이 모호), 결과적으로 같은 업종이라도 워치리스트 종목만
+    가중돼 '워치 vs 비워치'가 다르게 채점되는 불일치를 낳았다(44/3,900종목에만 적용).
+
+    전종목 동일 채점(파리티)을 위해 1.0으로 통일한다 — 업종 정규화는 이미 '업종중앙값 대비' 비교가
+    수행하므로 핵심(동종기업 기준 상대평가)은 그대로 보존된다. CAPITAL_INTENSIVE_SECTORS/GROWTH_SECTORS
+    상수는 향후 업종코드 매핑이 정비되면 되살릴 수 있도록 정의만 남겨둔다."""
+    return {"stability": 1.0, "growth": 1.0, "activity": 1.0}
 
 
 def compute_fundamental_scores(ratios: dict, sector: str) -> dict:
