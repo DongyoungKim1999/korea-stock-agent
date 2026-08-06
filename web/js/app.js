@@ -1179,6 +1179,9 @@ function currentStockContext() {
   const q = fund && fund.status === "ok" ? fund.quality : null;
   const dv = fund && fund.status === "ok" ? fund.dividend : null;
   const trend = fund && fund.status === "ok" ? fund.earnings_trend : null;
+  // 배당수익률은 현재가 기준 라이브값 우선(화면과 동일) — DART는 core에서 과거 배당기준일 기준이라 어긋남
+  const liveDy = quote && quote.dividend_yield && quote.dividend_yield !== "0.00%" ? parseFloat(quote.dividend_yield) : null;
+  const divYield = liveDy != null ? liveDy : (dv && dv.status === "ok" ? dv.dividend_yield_pct : null);
   return {
     code,
     name: (quote && quote.name) || stockName(code),
@@ -1187,11 +1190,11 @@ function currentStockContext() {
     fundamental_scores: fund && fund.status === "ok"
       ? { stability: fund.stability_score, growth: fund.growth_score, activity: fund.activity_score }
       : null,
-    valuation: (val && val.basis === "eps_derived") ? { per: val.per, pbr: val.pbr } : (quote ? { per: _parseBae(quote.per), pbr: _parseBae(quote.pbr) } : null),
+    valuation: (quote && _parseBae(quote.per) != null) ? { per: _parseBae(quote.per), pbr: _parseBae(quote.pbr) } : (val ? { per: val.per, pbr: val.pbr } : null),
     quality: q ? { f_score: q.f_score && q.f_score.score, f_score_max: q.f_score && q.f_score.max_score, roe_pct: q.roe_pct, roa_pct: q.roa_pct } : null,
     risk: risk ? { annualized_volatility_pct: risk.annualized_volatility_pct, max_drawdown_pct: risk.max_drawdown_pct, week52_position_pct: risk.week52_position_pct } : null,
     support_resistance: levels ? { support: levels.support, resistance: levels.resistance } : null,
-    dividend: dv && dv.status === "ok" ? { yield_pct: dv.dividend_yield_pct, payout_pct: dv.payout_pct } : (dv && dv.status === "none" ? "무배당" : null),
+    dividend: divYield != null ? { yield_pct: divYield, payout_pct: dv && dv.payout_pct != null ? dv.payout_pct : null } : (dv && dv.status === "none" ? "무배당" : null),
     earnings_trend: trend && trend.length ? trend.map((t) => ({ year: t.year, revenue: t.revenue, op_margin_pct: t.op_margin_pct })) : null,
   };
 }
