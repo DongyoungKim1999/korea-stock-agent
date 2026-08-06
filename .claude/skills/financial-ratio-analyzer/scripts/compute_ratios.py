@@ -127,11 +127,16 @@ def _amount_from(acc: dict, amount_key: str) -> float | None:
 
 def _find_amount(accounts: list[dict], field: str, amount_key: str) -> float | None:
     ids, names, sj_divs = _ACCOUNT_MAP[field]
-    for acc in accounts:
-        if acc.get("sj_div") in sj_divs and acc.get("account_id") in ids:
-            v = _amount_from(acc, amount_key)
-            if v is not None:
-                return v
+    # id는 '우선순위' 순서다 — 계정 출현 순서가 아니라 이 순서를 존중해야 한다. 예: equity는
+    # 총자본(ifrs-full_Equity)을 지배주주지분(EquityAttributableToOwnersOfParent)보다 먼저 잡아야
+    # 총액 순이익(ProfitLoss)과 분모가 일치해 ROE가 어긋나지 않는다(지배지분이 먼저 나오면 오차).
+    for wanted_id in ids:
+        for acc in accounts:
+            if acc.get("sj_div") in sj_divs and acc.get("account_id") == wanted_id:
+                v = _amount_from(acc, amount_key)
+                if v is not None:
+                    return v
+    # id로 못 찾으면(비표준 공시) 계정명 부분일치로 폴백
     for acc in accounts:
         if acc.get("sj_div") in sj_divs and any(n in (acc.get("account_nm") or "") for n in names):
             v = _amount_from(acc, amount_key)
