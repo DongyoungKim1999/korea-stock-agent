@@ -647,24 +647,22 @@ function renderDividend(div) {
   const p = document.getElementById("div-payout");
   const d = document.getElementById("div-dps");
   const q = state.currentQuote;
-  const hasDart = div && div.status === "ok" && div.dividend_yield_pct != null;
-  // 라이브 시세 배당(네이버) — DART 배당이 없는 전종목(core)도 배당수익률/주당배당금 표시
-  const qYield = q && q.dividend_yield && q.dividend_yield !== "0.00%" ? q.dividend_yield : null;
+  // 배당수익률은 '현재가 기준'이 정확하다 — 라이브 시세배당수익률(네이버, 현재가 기준)을 우선한다.
+  // DART dividend_yield_pct는 core 종목에서 '과거 배당기준일 시가배당률'이라 주가가 변하면 어긋난다
+  // (예: 기업은행 DART 4.2% vs 현재 5.15%). 라이브가 없을 때만 DART 값으로 대체하고, 배당성향(payout)은
+  // DART만 제공하므로 항상 DART에서 가져온다.
+  const liveYield = q && q.dividend_yield && q.dividend_yield !== "0.00%" ? parseFloat(q.dividend_yield) : null;
+  const dartYield = div && div.status === "ok" && div.dividend_yield_pct != null ? div.dividend_yield_pct : null;
+  const yieldPct = liveYield != null ? liveYield : dartYield;
+  const payout = div && div.payout_pct != null ? div.payout_pct : null;
+  const dps = (div && div.dps != null) ? `${Math.round(div.dps).toLocaleString("ko-KR")}원` : (q && q.dividend ? q.dividend : null);
 
-  if (hasDart) {
+  if (yieldPct != null) {
     tiles.hidden = false; none.hidden = true;
-    y.textContent = `${div.dividend_yield_pct.toFixed(1)}%`;
-    y.style.color = div.dividend_yield_pct >= 4 ? "var(--good)" : "";
-    p.textContent = div.payout_pct == null ? "-" : `${Math.round(div.payout_pct)}%`;
-    d.textContent = div.dps == null ? "-" : `${Math.round(div.dps).toLocaleString("ko-KR")}원`;
-    return;
-  }
-  if (qYield) {
-    tiles.hidden = false; none.hidden = true;
-    y.textContent = qYield;
-    y.style.color = parseFloat(qYield) >= 4 ? "var(--good)" : "";
-    p.textContent = div && div.payout_pct != null ? `${Math.round(div.payout_pct)}%` : "-"; // 배당성향은 DART만 제공
-    d.textContent = q.dividend || "-"; // "1,668원"
+    y.textContent = `${yieldPct.toFixed(1)}%`;
+    y.style.color = yieldPct >= 4 ? "var(--good)" : "";
+    p.textContent = payout == null ? "-" : `${Math.round(payout)}%`;
+    d.textContent = dps || "-";
     return;
   }
   // 무배당 또는 데이터 없음
@@ -738,10 +736,11 @@ function renderSummaryStrip(code) {
     else if (r < 4 / 9) tags.push({ t: `재무취약(F${fs.score})`, c: "bad" });
   }
   if (q && q.roe_pct != null && q.roe_pct >= 15) tags.push({ t: `고ROE ${q.roe_pct.toFixed(0)}%`, c: "good" });
-  // 배당
+  // 배당 — 현재가 기준 라이브 수익률 우선(DART는 core에서 과거 배당기준일 기준이라 어긋남)
   const dv = okF ? fund.dividend : null;
-  if (dv && dv.status === "ok" && dv.dividend_yield_pct != null && dv.dividend_yield_pct >= 4)
-    tags.push({ t: `고배당 ${dv.dividend_yield_pct.toFixed(1)}%`, c: "good" });
+  const liveDy = quote && quote.dividend_yield && quote.dividend_yield !== "0.00%" ? parseFloat(quote.dividend_yield) : null;
+  const dyPct = liveDy != null ? liveDy : (dv && dv.status === "ok" ? dv.dividend_yield_pct : null);
+  if (dyPct != null && dyPct >= 4) tags.push({ t: `고배당 ${dyPct.toFixed(1)}%`, c: "good" });
   // 기술 (상대강도 반영된 재보정 점수 우선)
   const ts = okT ? (tech._displayScore ?? tech.score) : null;
   if (ts != null) {
