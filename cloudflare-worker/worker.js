@@ -119,6 +119,21 @@ async function handleQuote(code, origin) {
         out.recomm_mean = num(c.recommMean); // 1(강력매도)~5(강력매수)
         out.consensus_date = c.createDate || null;
       }
+      // 프리마켓 등 realtime polling이 등락을 못 줄 때(change null/0) integration의 dealTrendInfos로 보강 —
+      // 직전 세션 종가·등락으로 등락률을 역산해 '0%'로 비어 보이는 구간을 없앤다.
+      if (out.change == null || (out.change === 0 && (out.change_pct == null || out.change_pct === 0))) {
+        const dt = (g.dealTrendInfos || [])[0];
+        if (dt) {
+          const close = num(dt.closePrice), chg = num(dt.compareToPreviousClosePrice);
+          if (close != null && chg != null) {
+            if (out.price == null) out.price = close;
+            out.change = chg;
+            const prev = close - chg;
+            out.change_pct = prev ? Math.round((chg / prev) * 10000) / 100 : 0;
+            if (!out.direction) out.direction = chg > 0 ? "RISING" : chg < 0 ? "FALLING" : "STEADY";
+          }
+        }
+      }
     }
   } catch (_) {}
 
