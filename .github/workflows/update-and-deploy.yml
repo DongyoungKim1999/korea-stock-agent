@@ -94,8 +94,20 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add web/data
-          git diff --staged --quiet || git commit -m "chore: 대시보드 데이터 자동 갱신 $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-          git push
+          if git diff --staged --quiet; then
+            echo "변경 없음 — 커밋 생략"
+          else
+            git commit -m "chore: 대시보드 데이터 자동 갱신 $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+            # 재생성 실행 중(수십 분) 코드 커밋 등으로 main이 이동하면 단순 push가 거부돼 재계산분이
+            # 통째로 유실됐다(커밋 스텝 실패→배포 skip). 데이터 커밋은 web/data만 건드리고 코드 커밋과
+            # 경로가 겹치지 않으므로 rebase 후 재시도하면 안전하게 반영된다.
+            for i in 1 2 3 4 5; do
+              if git push; then break; fi
+              echo "push 거부됨 — 원격 변경 rebase 후 재시도 ($i/5)"
+              git pull --rebase origin main || exit 1
+              sleep $((i * 3))
+            done
+          fi
 
       - name: Pages 아티팩트 업로드
         uses: actions/upload-pages-artifact@v3
