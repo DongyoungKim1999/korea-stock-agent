@@ -21,25 +21,38 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 FUND_DIR = ROOT / "web" / "data" / "fundamental"
+MOM_PATH = ROOT / "web" / "data" / "momentum.json"
 OUT_PATH = ROOT / "web" / "data" / "factor_ranking.json"
 
 KST = timezone(timedelta(hours=9))
 
 # 필라별 팩터 정의: (팩터키, 필라). 전부 '높을수록 우수'가 되도록 값을 미리 변환해 담는다.
+# 가중치는 학술 강건성 순: 모멘텀·퀄리티 최상, 밸류 다음, 성장은 보조(성장은 단독 팩터로는 약함).
 PILLARS = {
+    "momentum": ["mom"],
     "quality": ["roe", "roa", "fscore", "stability"],
-    "growth": ["rev_g", "oi_g", "ni_g"],
     "value": ["earnings_yield", "book_yield"],
+    "growth": ["rev_g", "oi_g", "ni_g"],
 }
-PILLAR_WEIGHT = {"quality": 0.5, "growth": 0.3, "value": 0.2}
+PILLAR_WEIGHT = {"momentum": 0.35, "quality": 0.30, "value": 0.20, "growth": 0.15}
 
 
 def _num(x):
     return x if isinstance(x, (int, float)) and x == x else None  # NaN 제외
 
 
+def _load_momentum() -> dict:
+    """web/data/momentum.json의 {code: 12-1M 모멘텀%}. 아직 없으면 빈 dict(모멘텀 필라 없이 랭킹)."""
+    try:
+        d = json.loads(MOM_PATH.read_text(encoding="utf-8"))
+        return d.get("moms", {}) if d.get("status") == "ok" else {}
+    except Exception:
+        return {}
+
+
 def load_universe() -> list[dict]:
     """정상 종목별 팩터 원값(높을수록 우수로 변환)을 모은다."""
+    moms = _load_momentum()
     out = []
     for p in FUND_DIR.glob("*.json"):
         try:
@@ -59,6 +72,7 @@ def load_universe() -> list[dict]:
         ey = (1.0 / per) if (per and per > 0) else None
         by = (1.0 / pbr) if (pbr and pbr > 0) else None
         factors = {
+            "mom": _num(moms.get(d["code"])),  # 12-1개월 모멘텀(%) — 전종목 가격 수집(momentum.json)
             "roe": _num(q.get("roe_pct")),
             "roa": _num(q.get("roa_pct")),
             "fscore": _num(fsr),
@@ -130,19 +144,22 @@ def build_ranking() -> dict:
     for rank, s in enumerate(ranked, start=1):
         pct = round((1 - (rank - 1) / m) * 100)  # 1위=100, 꼴찌≈0 (상위 백분위)
         decile = min(10, max(1, int((rank - 1) / m * 10) + 1))  # 1=상위10%
+        pz = s["_pillar"]
         ranks[s["code"]] = {
             "rank": rank, "pct": pct, "decile": decile,
             "composite": round(s["_composite"], 3),
-            "quality": round(s["_pillar"]["quality"], 2) if "quality" in s["_pillar"] else None,
-            "growth": round(s["_pillar"]["growth"], 2) if "growth" in s["_pillar"] else None,
-            "value": round(s["_pillar"]["value"], 2) if "value" in s["_pillar"] else None,
+            "momentum": round(pz["momentum"], 2) if "momentum" in pz else None,
+            "quality": round(pz["quality"], 2) if "quality" in pz else None,
+            "value": round(pz["value"], 2) if "value" in pz else None,
+            "growth": round(pz["growth"], 2) if "growth" in pz else None,
         }
 
     # 스크리너용 상위 60 (이름 포함)
     top = [{
         "code": s["code"], "name": s["name"], "sector": s.get("sector"),
         "pct": ranks[s["code"]]["pct"], "decile": ranks[s["code"]]["decile"],
-        "quality": ranks[s["code"]]["quality"], "growth": ranks[s["code"]]["growth"], "value": ranks[s["code"]]["value"],
+        "momentum": ranks[s["code"]]["momentum"], "quality": ranks[s["code"]]["quality"],
+        "value": ranks[s["code"]]["value"], "growth": ranks[s["code"]]["growth"],
     } for s in ranked[:60]]
 
     return {

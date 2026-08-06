@@ -699,8 +699,8 @@ function renderFactorProfile(code) {
   el.innerHTML =
     `<div class="fp-head"><span class="fp-title">🏆 팩터 종합 <span class="fp-muted">(전종목 ${(fr.universe || 0).toLocaleString("ko-KR")}개 중)</span></span>` +
     `<span class="fp-rank" style="color:${rankColor}">상위 ${topPct}% · ${r.decile}분위</span></div>` +
-    pillar("퀄리티", r.quality) + pillar("성장", r.growth) + pillar("밸류", r.value) +
-    `<div class="fp-note">퀄리티·성장·밸류를 전종목 z-점수로 표준화한 횡단면 랭킹. 0=평균, +면 우수. 밸류는 PER 역산 가능 종목만. (모멘텀 추가 예정)</div>`;
+    pillar("모멘텀", r.momentum) + pillar("퀄리티", r.quality) + pillar("밸류", r.value) + pillar("성장", r.growth) +
+    `<div class="fp-note">모멘텀(12-1M)·퀄리티·밸류·성장을 전종목 z-점수로 표준화한 횡단면 랭킹. 0=평균, +면 우수. 모멘텀은 가격 수집된 종목만·밸류는 PER 역산 종목만(점진 확대).</div>`;
 }
 
 function renderFactorTop() {
@@ -708,7 +708,7 @@ function renderFactorTop() {
   if (!fr || fr.status !== "ok" || !Array.isArray(fr.top)) { showToast("팩터 랭킹 데이터가 아직 생성되지 않았습니다."); return; }
   const items = fr.top.map((t) => ({
     code: t.code, name: t.name, has_detail: true,
-    sector: `상위 ${Math.max(1, 100 - t.pct)}% · 퀄${t.quality ?? "-"}/성장${t.growth ?? "-"}`,
+    sector: `상위 ${Math.max(1, 100 - t.pct)}% · 모멘${t.momentum ?? "-"}/퀄${t.quality ?? "-"}`,
   }));
   const s = document.getElementById("search-summary");
   if (s) s.textContent = `🏆 팩터 종합 TOP ${items.length} — 퀄리티·성장·밸류 (클릭해 분석)`;
