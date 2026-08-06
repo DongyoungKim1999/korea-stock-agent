@@ -723,9 +723,11 @@ function renderSummaryStrip(code) {
   // DART 역산값 우선, 없으면 라이브 시세 PER/PBR — core(비워치) 종목도 밸류 태그가 나오게(파리티).
   const val = okF ? fund.valuation : null;
   const quote = state.currentQuote;
-  const hasDartV = val && val.basis === "eps_derived";
-  const vpbr = hasDartV ? val.pbr : (quote ? _parseBae(quote.pbr) : null);
-  const vper = hasDartV ? val.per : (quote ? _parseBae(quote.per) : null);
+  // 밸류 태그도 타일·밴드와 동일하게 라이브 트레일링 PER/PBR 우선(일관성). DART 역산은 라이브 없을 때만.
+  const livePbr = quote ? _parseBae(quote.pbr) : null;
+  const livePer = quote ? _parseBae(quote.per) : null;
+  const vpbr = livePbr != null ? livePbr : (val ? val.pbr : null);
+  const vper = livePer != null ? livePer : (val ? val.per : null);
   if (vpbr != null && vpbr < 1) tags.push(weakQuality ? { t: "PBR<1 가치함정 주의", c: "warn" } : { t: "PBR<1 저평가", c: "good" });
   else if (vper != null && vper > 0 && vper < 10) tags.push({ t: "이익 대비 저평가", c: "good" });
   else if (vper != null && vper > 40) tags.push({ t: "밸류에이션 부담", c: "warn" });
