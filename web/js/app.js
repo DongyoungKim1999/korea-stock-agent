@@ -878,10 +878,13 @@ function computeBeta(priceSeries) {
 }
 
 function companyWacc(beta, equityEok, netDebtEok) {
-  const b = beta == null ? 1.0 : Math.max(0.3, Math.min(2.0, beta));
+  const raw = beta == null ? 1.0 : Math.max(0.3, Math.min(2.0, beta));
+  // Blume(1971) 조정 — 회귀 raw 베타는 표본노이즈가 크고 장기적으로 1로 평균회귀한다. 0.67·raw+0.33으로
+  // 1쪽으로 당겨 안정화한다(블룸버그 'adjusted beta' 기본식). CAPM 자기자본비용의 과대·과소를 완화.
+  const b = 0.67 * raw + 0.33;
   const re = _RF + b * _ERP;                 // 자기자본비용(CAPM)
   const E = Math.max(equityEok || 0, 1), D = Math.max(netDebtEok || 0, 0);
-  const wacc = (E * re + D * (_RD * (1 - _TAX))) / (E + D); // 자본구조 가중
+  const wacc = (E * re + D * (_RD * (1 - _TAX))) / (E + D); // 자본구조 가중(D=순부채 근사, 순현금이면 0)
   return Math.round(Math.max(6, Math.min(15, wacc)) * 10) / 10;
 }
 
