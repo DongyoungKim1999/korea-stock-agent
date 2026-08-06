@@ -790,7 +790,9 @@ function buildOneliner(tags) {
 // ---------- 밸류에이션 계산기 (2단계 FCFF DCF) ----------
 
 function _valcNum(id) {
-  const v = parseFloat(document.getElementById(id).value);
+  // 콤마 제거 후 파싱 — 사용자가 큰 수를 "377,929"·"246,000"처럼 천단위 콤마로 넣으면 parseFloat가
+  // 콤마에서 잘려(→377) 적정주가가 통째로 틀어지던 문제 방지.
+  const v = parseFloat(String(document.getElementById(id).value).replace(/,/g, ""));
   return Number.isFinite(v) ? v : null;
 }
 

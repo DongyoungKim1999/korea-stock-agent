@@ -16,10 +16,10 @@ const PALETTE = {
   grid: "rgba(255,255,255,0.06)",
 };
 
-function scoreStatusColor(score, scale5 = true) {
-  const v = scale5 ? score : score;
-  if (v >= 4.0) return PALETTE.good;
-  if (v >= 3.0) return PALETTE.warning;
+function scoreStatusColor(score) {
+  // 1~5 점수 → 상태색. (이전엔 쓰이지 않는 scale5 파라미터 + `scale5?score:score` 무의미 삼항이 있었음)
+  if (score >= 4.0) return PALETTE.good;
+  if (score >= 3.0) return PALETTE.warning;
   return PALETTE.critical;
 }
 
