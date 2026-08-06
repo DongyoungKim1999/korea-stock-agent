@@ -33,6 +33,7 @@ def main() -> None:
     import generate_technical
     import generate_fundamental_all
     import generate_company_index
+    import generate_factor_ranking
 
     # generate_attention(주목종목 스캔)은 웹 대시보드 UI에서 뺐으므로(2026-07 개편) 더 이상
     # 호출하지 않는다 — 전종목 스캔은 시간이 오래 걸리고 KRX 차단으로 자주 실패했었다.
@@ -47,6 +48,8 @@ def main() -> None:
         "company_index": run_step("전체 상장사 검색 인덱스 생성", generate_company_index.main),
         "technical": run_step("기술적분석 생성(워치리스트)", generate_technical.main),
         "fundamental": run_step("기본적분석 생성(전종목 업종평균)", generate_fundamental_all.main),
+        # 팩터 랭킹은 fundamental 산출물을 읽어 횡단면 z-점수를 매기므로 반드시 그 다음에 실행.
+        "factor_ranking": run_step("전종목 횡단면 팩터 랭킹 생성", generate_factor_ranking.main),
     }
 
     meta = {

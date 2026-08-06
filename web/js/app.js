@@ -677,6 +677,50 @@ function renderFundamental(data) {
   warnEl.textContent = humanizeWarnings(data.warnings);
 }
 
+// ---------- 팩터 랭킹 (전종목 횡단면 멀티팩터) — 퀀트식 '줄 세우기' ----------
+
+function renderFactorProfile(code) {
+  const el = document.getElementById("factor-profile");
+  if (!el) return;
+  const fr = state.factorRanking;
+  const r = fr && fr.status === "ok" && fr.ranks ? fr.ranks[code] : null;
+  if (!r) { el.hidden = true; el.innerHTML = ""; return; }
+  el.hidden = false;
+  const topPct = Math.max(1, 100 - r.pct);
+  const rankColor = r.decile <= 2 ? "var(--good)" : r.decile <= 5 ? "var(--warning)" : "var(--critical)";
+  const bar = (z) => z == null ? null : Math.max(2, Math.min(100, (z + 2.5) / 5 * 100));
+  const zColor = (z) => z == null ? "var(--text-muted)" : z >= 0.5 ? "var(--good)" : z <= -0.5 ? "var(--critical)" : "var(--text-secondary)";
+  const pillar = (label, z) => {
+    const w = bar(z);
+    return `<div class="fp-pillar"><span class="fp-plabel">${label}</span>` +
+      `<span class="fp-track">${w == null ? "" : `<span class="fp-mid"></span><span class="fp-fill" style="width:${w}%;background:${zColor(z)}"></span>`}</span>` +
+      `<span class="fp-pz" style="color:${zColor(z)}">${z == null ? "—" : (z >= 0 ? "+" : "") + z.toFixed(1)}</span></div>`;
+  };
+  el.innerHTML =
+    `<div class="fp-head"><span class="fp-title">🏆 팩터 종합 <span class="fp-muted">(전종목 ${(fr.universe || 0).toLocaleString("ko-KR")}개 중)</span></span>` +
+    `<span class="fp-rank" style="color:${rankColor}">상위 ${topPct}% · ${r.decile}분위</span></div>` +
+    pillar("퀄리티", r.quality) + pillar("성장", r.growth) + pillar("밸류", r.value) +
+    `<div class="fp-note">퀄리티·성장·밸류를 전종목 z-점수로 표준화한 횡단면 랭킹. 0=평균, +면 우수. 밸류는 PER 역산 가능 종목만. (모멘텀 추가 예정)</div>`;
+}
+
+function renderFactorTop() {
+  const fr = state.factorRanking;
+  if (!fr || fr.status !== "ok" || !Array.isArray(fr.top)) { showToast("팩터 랭킹 데이터가 아직 생성되지 않았습니다."); return; }
+  const items = fr.top.map((t) => ({
+    code: t.code, name: t.name, has_detail: true,
+    sector: `상위 ${Math.max(1, 100 - t.pct)}% · 퀄${t.quality ?? "-"}/성장${t.growth ?? "-"}`,
+  }));
+  const s = document.getElementById("search-summary");
+  if (s) s.textContent = `🏆 팩터 종합 TOP ${items.length} — 퀄리티·성장·밸류 (클릭해 분석)`;
+  document.getElementById("search-input").value = "";
+  renderResultList(items);
+}
+
+function wireFactorTop() {
+  const btn = document.getElementById("factor-top-btn");
+  if (btn) btn.onclick = renderFactorTop;
+}
+
 function _parseBae(t) { // "19.40배" → 19.40
   if (t == null) return null;
   const n = parseFloat(String(t).replace(/[^0-9.\-]/g, ""));
@@ -1254,6 +1298,7 @@ async function loadFundamental(code) {
   } catch (e) {
     renderFundamental({ status: "unsupported" });
   }
+  renderFactorProfile(code); // 전종목 횡단면 팩터 랭킹 프로파일
   if (state.currentCode === code) { renderSummaryStrip(code); autofillValuation(code); } // 재무 태그 + 계산기 주식수 자동채움
 }
 
@@ -1403,7 +1448,9 @@ async function init() {
     state.companyIndex = idx.status === "ok" ? idx.companies : [];
   } catch (e) { state.companyIndex = []; }
   try { state.meta = await loadJSON("data/meta.json"); } catch (e) { state.meta = null; }
+  try { state.factorRanking = await loadJSON("data/factor_ranking.json"); } catch (e) { state.factorRanking = null; }
   renderFreshness();
+  wireFactorTop();
 
   updateSearchSummary(state.watchlist.length, "");
   renderResultList(state.watchlist);
