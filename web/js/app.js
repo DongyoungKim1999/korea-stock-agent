@@ -578,16 +578,22 @@ function renderValuation(val) {
 function renderValBand(fin) {
   const band = document.getElementById("val-band");
   if (!fin || !Array.isArray(fin.per)) { band.hidden = true; return; }
-  const valid = fin.per.map((v, i) => ({ v, y: fin.years[i] })).filter((o) => o.v != null && o.v > 0);
+  // 미완결 당해연도(추정 PER)는 밴드에서 제외 — 완결 사업연도만으로 역사적 범위를 만든다. 당해 추정
+  // PER은 실적 급증 시 트레일링보다 훨씬 낮아(예: 삼성 5.0배) '역사적 저평가'로 오인시켰다.
+  const curYear = new Date().getFullYear();
+  const valid = fin.per.map((v, i) => ({ v, y: Number(fin.years[i]) })).filter((o) => o.v != null && o.v > 0 && o.y < curYear);
   if (valid.length < 2) { band.hidden = true; return; }
   const vals = valid.map((o) => o.v);
-  const min = Math.min(...vals), max = Math.max(...vals), cur = valid[valid.length - 1].v;
+  const min = Math.min(...vals), max = Math.max(...vals);
+  // 현재 PER = 라이브 트레일링(시세 strip과 동일 숫자), 없으면 최근 완결연도 PER으로 대체.
+  const livePer = state.currentQuote ? _parseBae(state.currentQuote.per) : null;
+  const cur = (livePer != null && livePer > 0) ? livePer : valid[valid.length - 1].v;
   const pos = max > min ? ((cur - min) / (max - min)) * 100 : 50;
   band.hidden = false;
   document.getElementById("vb-marker").style.left = `${Math.max(0, Math.min(100, pos))}%`;
   const verdict = pos <= 30 ? "역사적 저평가권" : pos >= 70 ? "역사적 고평가권" : "중간 수준";
   const vc = pos <= 30 ? "var(--good)" : pos >= 70 ? "var(--critical)" : "var(--text-secondary)";
-  document.getElementById("vb-verdict").innerHTML = `<span style="color:${vc}">${verdict}</span> · 현재 ${cur.toFixed(1)}배 (범위 ${min.toFixed(1)}~${max.toFixed(1)})`;
+  document.getElementById("vb-verdict").innerHTML = `<span style="color:${vc}">${verdict}</span> · 현재 ${cur.toFixed(1)}배 (완결연도 범위 ${min.toFixed(1)}~${max.toFixed(1)})`;
   document.getElementById("vb-years").textContent = valid.map((o) => `${String(o.y).slice(2)} ${o.v.toFixed(1)}`).join("  ·  ");
 }
 
@@ -1017,6 +1023,7 @@ async function refreshQuote(code) {
   const fund = state.fundCache[code];
   renderDividend(fund && fund.status === "ok" ? fund.dividend : null); // 시세 배당 폴백 반영
   renderValuation(fund && fund.status === "ok" ? fund.valuation : null); // 시세 PER/PBR 폴백 반영(core 종목)
+  if (state.financeCache && state.financeCache[code]) renderValBand(state.financeCache[code]); // 라이브 트레일링 PER로 밴드 현재위치 갱신
   // 종합요약 이름을 라이브 데이터로 보정(비워치리스트 종목 등)
   if (q && q.name) document.getElementById("ss-name").textContent = `${q.name} 종합`;
 }
