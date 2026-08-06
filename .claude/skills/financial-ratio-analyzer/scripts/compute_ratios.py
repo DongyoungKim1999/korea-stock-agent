@@ -175,7 +175,12 @@ def compute_period_ratios(accounts: list[dict]) -> dict:
     f = {k: v["frmtrm"] for k, v in a.items()}
 
     def growth(key):
-        return _safe_div(t[key] - f[key], abs(f[key])) * 100 if t[key] is not None and f[key] not in (None, 0) else None
+        if t[key] is None or f[key] in (None, 0):
+            return None
+        g = (t[key] - f[key]) / abs(f[key]) * 100
+        # 전년 기저가 극도로 작으면(스팩·신규상장·흑자전환 등) 성장률이 수백~수천%로 튀어 무의미하다
+        # (예: 매출 +23,900%). ±400%p를 넘으면 '측정 불가'(None)로 둬 성장점수·표시를 오염시키지 않는다.
+        return g if abs(g) <= 400 else None
 
     return {
         "debt_ratio": _safe_div(t["liabilities"], t["equity"]) * 100 if _safe_div(t["liabilities"], t["equity"]) is not None else None,
