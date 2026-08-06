@@ -255,6 +255,7 @@ function renderTechnical(data) {
     renderRisk(null);
     renderLevels(null);
     renderRS(null);
+    renderTradeContext(null);
     warnEl.textContent = data && data.reason ? `사유: ${data.reason}` : "";
     return;
   }
@@ -342,7 +343,7 @@ function renderRS(rs) {
 }
 
 async function applyRelativeStrength(data) {
-  if (!data || data.status !== "ok" || !data.price_series) { renderRS(null); return; }
+  if (!data || data.status !== "ok" || !data.price_series) { renderRS(null); renderTradeContext(null); return; }
   const code = data.code;
   await ensureKospi();
   if (state.currentCode !== code) return; // 종목이 바뀌었으면 무시
@@ -359,6 +360,154 @@ async function applyRelativeStrength(data) {
     data._displayScore = s; // 종합요약 태그에서 재사용
     if (state.currentCode === code) renderSummaryStrip(code); // 재보정 점수로 태그 갱신
   }
+  renderTradeContext(buildTradeContext(data, rs)); // 매매 판단 컨텍스트(추세국면·계획·보유관리)
+}
+
+// ---------- 매매 판단 컨텍스트 — 점수가 아니라 '실제 의사결정'을 돕는 뷰 ----------
+// 기술적 분석의 정직한 쓸모: ①추세의 옳은 편에 서기 ②리스크 정의된 매매계획 ③상대강도(모멘텀 팩터).
+// price_series(OHLCV)만 있으면 워치리스트/온디맨드 모두에서 동일하게 계산된다(파이프라인 무관).
+
+const _won = (v) => (v == null || !isFinite(v)) ? "-" : Math.round(v).toLocaleString("ko-KR");
+
+function _atr(rows, period = 14) {
+  if (!rows || rows.length < period + 1) return null;
+  const trs = [];
+  for (let i = 1; i < rows.length; i++) {
+    const h = rows[i].high, l = rows[i].low, pc = rows[i - 1].close;
+    trs.push(Math.max(h - l, Math.abs(h - pc), Math.abs(l - pc)));
+  }
+  const recent = trs.slice(-period);
+  return recent.reduce((a, b) => a + b, 0) / recent.length;
+}
+
+function _avgValueTradedEok(rows, n = 20) {
+  const recent = (rows || []).slice(-n);
+  let sum = 0, cnt = 0;
+  for (const r of recent) if (r.close && r.volume) { sum += r.close * r.volume; cnt++; }
+  return cnt ? (sum / cnt) / 1e8 : null; // 원 → 억원
+}
+
+function buildTradeContext(data, rs) {
+  const rows = data && data.price_series, ind = data && data.indicators;
+  if (!rows || rows.length < 60 || !ind || ind.latest_close == null) return null;
+  const close = ind.latest_close, ma = ind.moving_averages || {}, levels = ind.levels || {}, risk = ind.risk || {};
+  const ma20 = ma.ma20 && ma.ma20.latest, ma60 = ma.ma60 && ma.ma60.latest, ma120 = ma.ma120 && ma.ma120.latest;
+  const support = levels.support, resistance = levels.resistance;
+  const atr = _atr(rows, 14), atrPct = (atr && close) ? atr / close * 100 : null;
+  const d20 = (ma20 && close) ? (close / ma20 - 1) * 100 : null;
+
+  // ── 추세 국면(다중 시간프레임): 단기 close vs 20일 · 중기 20>60 정배열 · 장기 close vs 120일 ──
+  const longUp = (ma120 != null) ? close > ma120 : null;
+  const midUp = (ma20 != null && ma60 != null) ? ma20 > ma60 : null;
+  const shortUp = (ma20 != null) ? close > ma20 : null;
+  let regime, regimeLabel, regimeColor;
+  if (longUp && midUp) { regime = "up"; regimeLabel = "상승추세"; regimeColor = "var(--good)"; }
+  else if (longUp === false && midUp === false) { regime = "down"; regimeLabel = "하락추세"; regimeColor = "var(--critical)"; }
+  else { regime = "range"; regimeLabel = "혼조 · 방향 불명확"; regimeColor = "var(--warning)"; }
+
+  // ── 상대강도(모멘텀 — 유일한 학술적 우위 팩터) ──
+  const rsVal = rs ? rs.rs3m : null;
+  const rsLabel = rsVal == null ? null
+    : rsVal >= 10 ? "시장 주도주" : rsVal >= 2 ? "시장 대비 강세" : rsVal > -2 ? "시장과 비슷" : rsVal > -10 ? "시장 대비 약세" : "시장 소외주";
+
+  // ── 타이밍 ──
+  let timing;
+  if (regime === "up") {
+    if (d20 != null && d20 >= -3 && d20 <= 3) timing = "상승추세 중 눌림목 — 진입 관심 구간";
+    else if (d20 != null && d20 > 10) timing = "20일선 대비 과열 — 눌림 기다림이 유리";
+    else if (d20 != null && d20 < -3) timing = "20일선 하회 — 단기 약화, 지지 확인 필요";
+    else timing = "상승추세 진행 중";
+  } else if (regime === "down") timing = "하락추세 — 기술적 매수 근거 부족 (역추세 위험)";
+  else timing = "박스권 — 지지 매수 / 저항 매도 관점";
+
+  // ── 매매 시나리오(눌림목 매수 관점). 하락추세면 계획 제시하지 않음 ──
+  // 진입은 '지지 근처(눌림)'로 잡아 손익비를 이상적 진입 기준으로 계산한다 — 현재가가 저항에 붙어 있으면
+  // 지금 사는 게 아니라 '눌림 대기'가 정답이므로, 현재가 기준으로 계산해 손익비가 나빠 보이게 하지 않는다.
+  let plan = null;
+  if (regime !== "down" && support != null && resistance != null && atr != null && support < close && resistance > support) {
+    const entry = support;                                        // 이상적 눌림 진입(지지 근처)
+    const stop = support - Math.max(0.8 * atr, support * 0.02);   // 지지 하단
+    const target = resistance;                                    // 박스 상단 저항
+    if (stop < entry && target > entry) {
+      const nearEntry = close <= support + 1.5 * atr;             // 현재가가 지지 근처면 지금 진입 관심
+      plan = { entry, stop, target, rr: (target - entry) / (entry - stop), nearEntry,
+               stopPct: (stop / entry - 1) * 100, targetPct: (target / entry - 1) * 100,
+               distToEntry: (close / support - 1) * 100 };
+    }
+  }
+
+  // ── 보유 관리 / 매도 신호 ──
+  let manage;
+  if (regime === "up") manage = (d20 != null && d20 > 12)
+    ? "과열 구간 — 일부 차익실현 고려, 추격매수 자제. 20일선 회귀 시 재평가"
+    : `추세 유지 → 보유. 60일선(${_won(ma60)}) 이탈 시 추세훼손으로 매도 고려`;
+  else if (regime === "down") manage = "하락추세 → 반등 시 비중축소 관점. 60일선·저항 회복 전 신규매수 자제";
+  else manage = "박스권 → 지지 이탈 시 매도 / 저항 돌파+거래량 동반 시 추세전환 관찰";
+
+  // ── 한 줄 판단 ──
+  const rsp = rsLabel ? ` + ${rsLabel}` : "";
+  let oneLiner;
+  if (regime === "up" && plan && plan.nearEntry)
+    oneLiner = `상승추세${rsp} + 지지 근접 → ${_won(plan.entry)} 부근 진입 관심, ${_won(plan.stop)}(${plan.stopPct.toFixed(0)}%) 이탈 시 손절 (목표 ${_won(plan.target)})`;
+  else if (regime === "up" && plan)
+    oneLiner = `상승추세${rsp} 이나 지지보다 ${plan.distToEntry.toFixed(0)}% 위 → ${_won(plan.entry)} 눌림 기다렸다 진입, 추격 자제`;
+  else if (regime === "up")
+    oneLiner = `상승추세${rsp} → 지지 형성 후 눌림목 진입 관점`;
+  else if (regime === "down")
+    oneLiner = `하락추세${rsp} → 기술적 매수 근거 부족, 관망. 60일선 회복 전 신규진입 위험`;
+  else if (plan)
+    oneLiner = `박스권${rsp} → ${_won(plan.entry)} 지지 매수 / ${_won(plan.target)} 저항 매도, 돌파 시 추세추종`;
+  else
+    oneLiner = `박스권${rsp} → 방향성 확인 전 관망`;
+
+  return { regime, regimeLabel, regimeColor, longUp, midUp, shortUp, d20, close,
+           rsVal, rsLabel, support, resistance, atrPct, valEok: _avgValueTradedEok(rows, 20),
+           w52: risk.week52_position_pct, timing, plan, manage, oneLiner, ma20, ma60, ma120 };
+}
+
+function renderTradeContext(ctx) {
+  const el = document.getElementById("trade-context");
+  if (!el) return;
+  if (!ctx) { el.hidden = true; el.innerHTML = ""; return; }
+  el.hidden = false;
+  const tf = (name, up) => `<span style="color:${up == null ? "var(--text-muted)" : up ? "var(--good)" : "var(--critical)"}">${name}${up == null ? " -" : up ? " ▲" : " ▼"}</span>`;
+  const rsColor = ctx.rsVal == null ? "var(--text-secondary)" : ctx.rsVal >= 2 ? "var(--good)" : ctx.rsVal <= -2 ? "var(--critical)" : "var(--text-secondary)";
+  const liq = ctx.valEok == null ? "" : `<span class="tc-cell"><span class="tc-k">거래대금</span>${ctx.valEok >= 10000 ? (ctx.valEok / 10000).toFixed(1) + "조" : Math.round(ctx.valEok).toLocaleString("ko-KR") + "억"}/일${ctx.valEok < 10 ? ' <b style="color:var(--warning)">⚠유동성낮음</b>' : ""}</span>`;
+
+  let planHtml;
+  if (ctx.plan) {
+    const p = ctx.plan, rr = p.rr;
+    const rrColor = rr == null ? "var(--text-secondary)" : rr >= 2 ? "var(--good)" : rr >= 1 ? "var(--warning)" : "var(--critical)";
+    const rrVerdict = rr == null ? "" : rr >= 2 ? "양호" : rr >= 1 ? "보통" : "불리";
+    const status = p.nearEntry
+      ? `<b style="color:var(--good)">✅ 현재 진입 관심권</b>`
+      : `<b style="color:var(--warning)">⏳ 눌림 대기</b> <span class="tc-muted">(지지보다 +${p.distToEntry.toFixed(0)}%)</span>`;
+    planHtml = `<div class="tc-plan">
+      <div class="tc-plan-title">📋 매매 시나리오 <span class="tc-muted">(눌림목 매수)</span> · ${status}</div>
+      <div class="tc-plan-grid">
+        <span><span class="tc-k">진입</span>${_won(p.entry)} 부근 <span class="tc-muted">(지지)</span></span>
+        <span><span class="tc-k">손절</span><b style="color:var(--critical)">${_won(p.stop)}</b> (${p.stopPct.toFixed(0)}%)</span>
+        <span><span class="tc-k">목표</span><b style="color:var(--good)">${_won(p.target)}</b> (+${p.targetPct.toFixed(0)}%)</span>
+        <span><span class="tc-k">손익비</span><b style="color:${rrColor}">${rr == null ? "-" : rr.toFixed(1) + " : 1"}</b> ${rrVerdict}</span>
+      </div></div>`;
+  } else {
+    planHtml = `<div class="tc-plan tc-noplan">📋 매매 시나리오: <b>제시 안 함</b> — ${ctx.regime === "down" ? "하락추세라 기술적 진입 근거가 부족합니다(역추세 매수 위험)." : "지지·저항이 불명확합니다."}</div>`;
+  }
+
+  el.innerHTML = `
+    <div class="tc-regime" style="border-left:3px solid ${ctx.regimeColor}">
+      <span class="tc-regime-label" style="color:${ctx.regimeColor}">${ctx.regimeLabel}</span>
+      <span class="tc-tf">${tf("단기", ctx.shortUp)} · ${tf("중기", ctx.midUp)} · ${tf("장기", ctx.longUp)}</span>
+    </div>
+    <div class="tc-signals">
+      <span class="tc-cell"><span class="tc-k">상대강도</span><b style="color:${rsColor}">${ctx.rsVal == null ? "-" : (ctx.rsVal >= 0 ? "+" : "") + ctx.rsVal.toFixed(0) + "%p"}</b> ${ctx.rsLabel || ""}</span>
+      <span class="tc-cell"><span class="tc-k">위치</span>지지 ${_won(ctx.support)} · 저항 ${_won(ctx.resistance)}${ctx.w52 != null ? ` · 52주 ${ctx.w52.toFixed(0)}%` : ""}</span>
+      ${liq}
+    </div>
+    <div class="tc-timing">⏱ ${ctx.timing}</div>
+    ${planHtml}
+    <div class="tc-manage">📌 <span class="tc-k">보유관리</span>${ctx.manage}</div>
+    <div class="tc-oneliner">💡 ${ctx.oneLiner}</div>`;
 }
 
 // ---------- 손익비 (Risk/Reward): 목표주가(컨센서스) vs 지지선 ----------

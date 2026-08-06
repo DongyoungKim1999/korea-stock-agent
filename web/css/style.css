@@ -432,3 +432,21 @@ html, body {
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 4px; }
+
+/* ---------- 매매 판단 컨텍스트 (기술적 의사결정 뷰) ---------- */
+.trade-context { margin: 12px 0 6px; display: flex; flex-direction: column; gap: 8px; }
+.tc-regime { display: flex; align-items: baseline; gap: 12px; padding: 8px 12px; background: var(--bg-card-alt); border-radius: var(--radius-sm); flex-wrap: wrap; }
+.tc-regime-label { font-size: 15px; font-weight: 700; }
+.tc-tf { font-size: 12px; font-weight: 600; letter-spacing: .3px; }
+.tc-signals { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12px; }
+.tc-cell { color: var(--text-primary); }
+.tc-k { color: var(--text-secondary); margin-right: 5px; }
+.tc-timing { font-size: 12.5px; color: var(--text-primary); padding: 6px 10px; background: rgba(255,255,255,0.03); border-radius: var(--radius-sm); }
+.tc-plan { padding: 10px 12px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: var(--bg-card-alt); }
+.tc-plan-title { font-size: 12px; font-weight: 700; margin-bottom: 6px; }
+.tc-plan-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 14px; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.tc-noplan { font-size: 12px; color: var(--text-secondary); line-height: 1.5; }
+.tc-muted { color: var(--text-muted); font-weight: 400; }
+.tc-manage { font-size: 12px; color: var(--text-secondary); line-height: 1.5; }
+.tc-oneliner { font-size: 13px; font-weight: 600; color: var(--text-primary); padding: 9px 12px; background: rgba(57,135,229,0.10); border-left: 3px solid #3987e5; border-radius: var(--radius-sm); line-height: 1.55; }
+@media (max-width: 520px) { .tc-plan-grid { grid-template-columns: 1fr; } }
