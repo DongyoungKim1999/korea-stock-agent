@@ -538,12 +538,14 @@ function renderValuation(val) {
   const pbrEl = document.getElementById("val-pbr");
   const perNote = document.getElementById("val-per-note");
   const pbrNote = document.getElementById("val-pbr-note");
-  // DART 역산값(120 full)이 있으면 그걸, 없으면(core 전종목) 라이브 시세의 PER/PBR을 쓴다.
+  // 라이브 트레일링 PER/PBR을 우선한다 — 시세 strip·밴드와 같은 숫자로 통일해 '화면에 PER이 여러 개'
+  // 보이던 혼란을 없앤다. 라이브가 없으면(장애 등) DART 역산값으로 대체.
   const q = state.currentQuote;
-  const hasDart = val && val.basis === "eps_derived";
-  const per = hasDart ? val.per : (q ? _parseBae(q.per) : null);
-  const pbr = hasDart ? val.pbr : (q ? _parseBae(q.pbr) : null);
-  const src = !hasDart && q ? " (시세)" : "";
+  const livePer = q ? _parseBae(q.per) : null;
+  const livePbr = q ? _parseBae(q.pbr) : null;
+  const per = livePer != null ? livePer : (val ? val.per : null);
+  const pbr = livePbr != null ? livePbr : (val ? val.pbr : null);
+  const src = livePer != null ? " (시세)" : "";
 
   if (per == null && pbr == null) {
     perEl.textContent = pbrEl.textContent = "-";
@@ -831,7 +833,10 @@ function computeValuation() {
 
   fairEl.textContent = `${Math.round(perShare).toLocaleString("ko-KR")}원`;
   const fmt = (v) => (Math.abs(v) >= 10000 ? `${(v / 10000).toFixed(1)}조` : `${Math.round(v).toLocaleString("ko-KR")}억`);
-  bdEl.innerHTML = `기업가치 ${fmt(ev)} · 주주가치 ${fmt(equity)} <span style="color:var(--text-muted)">(잔존가치 비중 ${Math.round(pvTerminal / ev * 100)}%)</span>`;
+  // 잔존가치(영구성장 구간) 비중이 높으면 적정주가가 영구성장률·할인율 가정에 극도로 민감해진다 — 경고.
+  const termFrac = ev > 0 ? pvTerminal / ev : 0;
+  const termNote = termFrac > 0.75 ? ` <span style="color:var(--warning)">⚠ 가치의 ${Math.round(termFrac * 100)}%가 잔존가치 — 영구성장률·할인율에 매우 민감</span>` : "";
+  bdEl.innerHTML = `기업가치 ${fmt(ev)} · 주주가치 ${fmt(equity)} <span style="color:var(--text-muted)">(잔존가치 비중 ${Math.round(termFrac * 100)}%)</span>${termNote}`;
 
   if (price && perShare > 0) {
     const upside = (perShare / price - 1) * 100;
