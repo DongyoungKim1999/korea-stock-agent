@@ -234,6 +234,38 @@ export default {
       return handleFinance(url.searchParams.get("code"), origin);
     }
 
+    // POST /analyze — 긴 문서(DART 공시 등) 구조화 추출 전용. 채팅(2000자 제한)과 분리해 긴 입력 허용.
+    // {text, instruction} → gpt-4o-mini가 지시대로 JSON 추출. $5 지출한도 안에서 동작.
+    if (request.method === "POST" && path.endsWith("/analyze")) {
+      if (!env.OPENAI_API_KEY) {
+        return jsonResponse({ error: "OPENAI_API_KEY 미설정" }, 500, origin);
+      }
+      let p;
+      try { p = await request.json(); } catch { return jsonResponse({ error: "잘못된 JSON" }, 400, origin); }
+      const text = typeof p.text === "string" ? p.text.slice(0, 32000) : "";       // 입력 상한(비용 캡)
+      const instruction = typeof p.instruction === "string" ? p.instruction.slice(0, 2000) : "";
+      if (text.length < 50) {
+        return jsonResponse({ error: "text가 너무 짧습니다" }, 400, origin);
+      }
+      const res = await fetch(OPENAI_ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${env.OPENAI_API_KEY}` },
+        body: JSON.stringify({
+          model: OPENAI_MODEL, max_tokens: 700, temperature: 0.3,
+          messages: [
+            { role: "system", content: "너는 한국 상장사 공시를 투자자 관점에서 간결히 분석하는 애널리스트다. 지시대로 JSON으로만 답한다." },
+            { role: "user", content: (instruction ? instruction + "\n\n" : "") + text },
+          ],
+        }),
+      });
+      if (!res.ok) {
+        const e = await res.text();
+        return jsonResponse({ error: `OpenAI 실패(${res.status})`, detail: e.slice(0, 200) }, 502, origin);
+      }
+      const data = await res.json();
+      return jsonResponse({ reply: data.choices?.[0]?.message?.content || "" }, 200, origin);
+    }
+
     if (request.method !== "POST") {
       return jsonResponse({ error: "POST만 지원합니다 (시세는 GET /quote?code=)" }, 405, origin);
     }

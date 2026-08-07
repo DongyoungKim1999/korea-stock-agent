@@ -743,6 +743,25 @@ function renderRevision(code) {
     : `<span class="ss-src">📊 추정치 리비전: 최근 ${r.span_days}일 변화 미미 (추적 ${r.n}회)</span>`;
 }
 
+// ---------- LLM 공시 인사이트 (사업보고서 → 가이던스·톤·레드플래그) ----------
+function renderFilingInsight(code) {
+  const el = document.getElementById("filing-insight");
+  if (!el) return;
+  const fi = state.filingInsights;
+  const r = fi && fi.status === "ok" && fi.insights ? fi.insights[code] : null;
+  if (!r) { el.hidden = true; el.innerHTML = ""; return; }
+  el.hidden = false;
+  const tone = r.tone || "";
+  const toneColor = /자신감|긍정|낙관/.test(tone) ? "var(--good)" : /우려|부정|악화/.test(tone) ? "var(--critical)" : /신중/.test(tone) ? "var(--warning)" : "var(--text-secondary)";
+  const rf = r.redflags || "";
+  const rfNone = rf.length < 15 && /특이사항\s*없음|없음|없습니다/.test(rf);
+  const rows = [];
+  if (r.guidance) rows.push(`<div class="fi-row"><span class="fi-k">📈 가이던스</span><span>${r.guidance}</span></div>`);
+  if (tone) rows.push(`<div class="fi-row"><span class="fi-k">🗣 경영진 톤</span><span style="color:${toneColor}">${tone}</span></div>`);
+  if (rf) rows.push(`<div class="fi-row"><span class="fi-k">${rfNone ? "✅" : "⚠️"} 레드플래그</span><span style="color:${rfNone ? "var(--text-secondary)" : "var(--critical)"}">${rf}</span></div>`);
+  el.innerHTML = `<div class="fi-head">📄 공시 인사이트 <span class="fi-src">${r.report_nm || ""} · AI 요약</span></div>${rows.join("")}`;
+}
+
 function _parseBae(t) { // "19.40배" → 19.40
   if (t == null) return null;
   const n = parseFloat(String(t).replace(/[^0-9.\-]/g, ""));
@@ -1321,6 +1340,7 @@ async function loadFundamental(code) {
     renderFundamental({ status: "unsupported" });
   }
   renderFactorProfile(code); // 전종목 횡단면 팩터 랭킹 프로파일
+  renderFilingInsight(code); // LLM 공시 인사이트(가이던스·톤·레드플래그)
   if (state.currentCode === code) { renderSummaryStrip(code); autofillValuation(code); } // 재무 태그 + 계산기 주식수 자동채움
 }
 
@@ -1473,6 +1493,7 @@ async function init() {
   try { state.meta = await loadJSON("data/meta.json"); } catch (e) { state.meta = null; }
   try { state.factorRanking = await loadJSON("data/factor_ranking.json"); } catch (e) { state.factorRanking = null; }
   try { state.estimateRevisions = await loadJSON("data/estimate_revisions.json"); } catch (e) { state.estimateRevisions = null; }
+  try { state.filingInsights = await loadJSON("data/filing_insights.json"); } catch (e) { state.filingInsights = null; }
   renderFreshness();
   wireFactorTop();
 

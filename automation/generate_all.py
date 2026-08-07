@@ -36,6 +36,7 @@ def main() -> None:
     import generate_momentum
     import generate_estimate_revisions
     import generate_factor_ranking
+    import generate_filing_insights
 
     # generate_attention(주목종목 스캔)은 웹 대시보드 UI에서 뺐으므로(2026-07 개편) 더 이상
     # 호출하지 않는다 — 전종목 스캔은 시간이 오래 걸리고 KRX 차단으로 자주 실패했었다.
@@ -55,6 +56,8 @@ def main() -> None:
         # 추정치 리비전: 컨센서스 스냅샷 누적(시간 지나며 신호 발현). 팩터랭킹과 독립이라 순서 무관.
         "estimate_revisions": run_step("애널리스트 추정치 리비전 스냅샷", generate_estimate_revisions.main),
         "factor_ranking": run_step("전종목 횡단면 팩터 랭킹 생성", generate_factor_ranking.main),
+        # LLM 공시 리더: 우선 유니버스(워치+팩터TOP) 사업보고서를 gpt-4o-mini로 요약. factor_ranking 다음.
+        "filing_insights": run_step("LLM 공시 인사이트(가이던스·톤·레드플래그)", generate_filing_insights.main),
     }
 
     meta = {
