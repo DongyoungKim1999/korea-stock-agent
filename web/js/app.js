@@ -721,6 +721,28 @@ function wireFactorTop() {
   if (btn) btn.onclick = renderFactorTop;
 }
 
+// ---------- 애널리스트 추정치 리비전 (컨센서스 변화 추적) ----------
+function renderRevision(code) {
+  const el = document.getElementById("ss-revision");
+  if (!el) return;
+  const er = state.estimateRevisions;
+  const r = er && er.status === "ok" && er.revisions ? er.revisions[code] : null;
+  if (!r) { el.hidden = true; el.innerHTML = ""; return; }
+  el.hidden = false;
+  const bits = [];
+  if (r.target_rev_pct != null && Math.abs(r.target_rev_pct) >= 0.5) {
+    const up = r.target_rev_pct > 0;
+    bits.push(`목표가 <b style="color:${up ? "var(--good)" : "var(--critical)"}">${up ? "▲+" : "▼"}${r.target_rev_pct.toFixed(1)}%</b>`);
+  }
+  if (r.recomm_change != null && Math.abs(r.recomm_change) >= 0.05) {
+    const up = r.recomm_change > 0; // 투자의견 1(매도)~5(매수) → 상승=상향
+    bits.push(`투자의견 <b style="color:${up ? "var(--good)" : "var(--critical)"}">${up ? "상향" : "하향"} ${up ? "+" : ""}${r.recomm_change.toFixed(2)}</b>`);
+  }
+  el.innerHTML = bits.length
+    ? `📊 추정치 리비전 <span class="ss-src">(최근 ${r.span_days}일)</span> · ${bits.join(" · ")}`
+    : `<span class="ss-src">📊 추정치 리비전: 최근 ${r.span_days}일 변화 미미 (추적 ${r.n}회)</span>`;
+}
+
 function _parseBae(t) { // "19.40배" → 19.40
   if (t == null) return null;
   const n = parseFloat(String(t).replace(/[^0-9.\-]/g, ""));
@@ -1311,6 +1333,7 @@ async function selectStock(code) {
   loadFundamental(code);       // 재무 기본적분석도 전종목 대상(업종평균)
   loadValuationBand(code);     // 밸류에이션 밴드(과거 대비 PER 위치)
   renderSummaryStrip(code);
+  renderRevision(code);        // 애널리스트 추정치 리비전(누적되면 표시)
 
   if (state.watchlistCodes.has(code)) {
     // 워치리스트: 사전생성 기술적분석(결정론적 점수 포함) 사용
@@ -1449,6 +1472,7 @@ async function init() {
   } catch (e) { state.companyIndex = []; }
   try { state.meta = await loadJSON("data/meta.json"); } catch (e) { state.meta = null; }
   try { state.factorRanking = await loadJSON("data/factor_ranking.json"); } catch (e) { state.factorRanking = null; }
+  try { state.estimateRevisions = await loadJSON("data/estimate_revisions.json"); } catch (e) { state.estimateRevisions = null; }
   renderFreshness();
   wireFactorTop();
 

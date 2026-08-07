@@ -34,6 +34,7 @@ def main() -> None:
     import generate_fundamental_all
     import generate_company_index
     import generate_momentum
+    import generate_estimate_revisions
     import generate_factor_ranking
 
     # generate_attention(주목종목 스캔)은 웹 대시보드 UI에서 뺐으므로(2026-07 개편) 더 이상
@@ -51,6 +52,8 @@ def main() -> None:
         "fundamental": run_step("기본적분석 생성(전종목 업종평균)", generate_fundamental_all.main),
         # 모멘텀(12-1M, 전종목 가격) → 팩터 랭킹(fundamental+모멘텀 읽어 횡단면 z). 순서 중요.
         "momentum": run_step("전종목 모멘텀 수집(점진 워밍)", generate_momentum.main),
+        # 추정치 리비전: 컨센서스 스냅샷 누적(시간 지나며 신호 발현). 팩터랭킹과 독립이라 순서 무관.
+        "estimate_revisions": run_step("애널리스트 추정치 리비전 스냅샷", generate_estimate_revisions.main),
         "factor_ranking": run_step("전종목 횡단면 팩터 랭킹 생성", generate_factor_ranking.main),
     }
 
