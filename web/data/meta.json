@@ -1,12 +1,13 @@
 {
-  "generated_at": "2026-08-08T04:43:47.571839+09:00",
+  "generated_at": "2026-08-08T05:37:21.906319+09:00",
   "steps_ok": {
     "company_index": true,
     "technical": true,
     "fundamental": true,
     "momentum": true,
     "estimate_revisions": true,
-    "factor_ranking": true
+    "factor_ranking": true,
+    "filing_insights": true
   },
   "watchlist_count": 120
 }
