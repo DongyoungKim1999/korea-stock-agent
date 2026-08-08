@@ -1201,10 +1201,12 @@ async function autofillValuation(code) {
 
   if (q && q.price != null) set("valc-price", Math.round(q.price));
 
-  // 발행주식수(백만주): EPS 역산값 우선, 없으면 시총/현재가로 역산(전종목 가능)
+  // 발행주식수(백만주): 시총/현재가(시장 내재)를 우선 — 라이브 시총과 일관돼 PSR·시총 기반 계산이
+  // 자기모순 없이 맞아떨어진다(현재 배수로 자동채움 시 적정주가≈현재가). EPS 역산 주식수는 가중평균·
+  // 발표시점 차이로 시총과 어긋나 자동채움 결과가 몇 % 틀어질 수 있어 후순위. 시총 없으면 EPS 역산 사용.
   const mcEok = q ? parseMarketCapEok(q.market_cap_text) : null;
-  let sharesM = val && val.shares_estimated ? val.shares_estimated / 1e6 : null;
-  if (sharesM == null && mcEok && q && q.price) sharesM = (mcEok * 100) / q.price;
+  let sharesM = (mcEok && q && q.price) ? (mcEok * 100) / q.price : null;
+  if (sharesM == null && val && val.shares_estimated) sharesM = val.shares_estimated / 1e6;
   if (sharesM != null) set("valc-shares", Math.round(sharesM * 10) / 10);
 
   // FCFF(억원)·순부채(억원) — 재무 파이프라인 valuation_inputs
