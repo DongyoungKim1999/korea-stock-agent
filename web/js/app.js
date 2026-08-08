@@ -699,8 +699,8 @@ function renderFactorProfile(code) {
   el.innerHTML =
     `<div class="fp-head"><span class="fp-title">🏆 팩터 종합 <span class="fp-muted">(전종목 ${(fr.universe || 0).toLocaleString("ko-KR")}개 중)</span></span>` +
     `<span class="fp-rank" style="color:${rankColor}">상위 ${topPct}% · ${r.decile}분위</span></div>` +
-    pillar("모멘텀", r.momentum) + pillar("퀄리티", r.quality) + pillar("밸류", r.value) + pillar("성장", r.growth) +
-    `<div class="fp-note">모멘텀(12-1M)·퀄리티·밸류·성장을 전종목 z-점수로 표준화한 횡단면 랭킹. 0=평균, +면 우수. 모멘텀은 가격 수집된 종목만·밸류는 PER 역산 종목만(점진 확대).</div>`;
+    pillar("모멘텀", r.momentum) + pillar("퀄리티", r.quality) + pillar("리비전", r.revision) + pillar("밸류", r.value) + pillar("성장", r.growth) +
+    `<div class="fp-note">모멘텀·퀄리티·리비전·밸류·성장을 전종목 z-점수로 표준화한 횡단면 랭킹. 0=평균, +면 우수. 리비전(목표가·투자의견 상향)·밸류는 데이터 있는 종목만 반영(누적되며 점진 확대).</div>`;
 }
 
 function renderFactorTop() {
