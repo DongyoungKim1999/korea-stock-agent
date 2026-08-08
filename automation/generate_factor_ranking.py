@@ -22,22 +22,19 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 FUND_DIR = ROOT / "web" / "data" / "fundamental"
 MOM_PATH = ROOT / "web" / "data" / "momentum.json"
-REV_PATH = ROOT / "web" / "data" / "estimate_revisions.json"
 OUT_PATH = ROOT / "web" / "data" / "factor_ranking.json"
 
 KST = timezone(timedelta(hours=9))
 
 # 필라별 팩터 정의: (팩터키, 필라). 전부 '높을수록 우수'가 되도록 값을 미리 변환해 담는다.
-# 가중치는 학술 강건성 순: 모멘텀·리비전·퀄리티 최상, 밸류 다음, 성장은 보조(성장은 단독 팩터로 약함).
-# 리비전(목표가·투자의견 상향)은 누적 전엔 대부분 비어 있어 밸류처럼 '가진 필라만 재정규화'로 처리된다.
+# 가중치는 학술 강건성 순: 모멘텀·퀄리티 최상, 밸류 다음, 성장은 보조(성장은 단독 팩터로 약함).
 PILLARS = {
     "momentum": ["mom"],
     "quality": ["roe", "roa", "fscore", "stability"],
-    "revision": ["tgt_rev", "rec_rev"],
     "value": ["earnings_yield", "book_yield"],
     "growth": ["rev_g", "oi_g", "ni_g"],
 }
-PILLAR_WEIGHT = {"momentum": 0.30, "quality": 0.25, "revision": 0.20, "value": 0.15, "growth": 0.10}
+PILLAR_WEIGHT = {"momentum": 0.35, "quality": 0.30, "value": 0.20, "growth": 0.15}
 
 
 def _num(x):
@@ -53,19 +50,9 @@ def _load_momentum() -> dict:
         return {}
 
 
-def _load_revisions() -> dict:
-    """estimate_revisions.json의 {code: {target_rev_pct, recomm_change}}. 누적 전엔 빈 dict."""
-    try:
-        d = json.loads(REV_PATH.read_text(encoding="utf-8"))
-        return d.get("revisions", {}) if d.get("status") == "ok" else {}
-    except Exception:
-        return {}
-
-
 def load_universe() -> list[dict]:
     """정상 종목별 팩터 원값(높을수록 우수로 변환)을 모은다."""
     moms = _load_momentum()
-    revs = _load_revisions()
     out = []
     for p in FUND_DIR.glob("*.json"):
         try:
@@ -84,11 +71,8 @@ def load_universe() -> list[dict]:
         pbr = v.get("pbr") if v.get("basis") == "eps_derived" else None
         ey = (1.0 / per) if (per and per > 0) else None
         by = (1.0 / pbr) if (pbr and pbr > 0) else None
-        rev = revs.get(d["code"]) or {}
         factors = {
             "mom": _num(moms.get(d["code"])),  # 12-1개월 모멘텀(%) — 전종목 가격 수집(momentum.json)
-            "tgt_rev": _num(rev.get("target_rev_pct")),  # 목표가 리비전(%) — 상향=우수
-            "rec_rev": _num(rev.get("recomm_change")),   # 투자의견 변화 — 상향=우수
             "roe": _num(q.get("roe_pct")),
             "roa": _num(q.get("roa_pct")),
             "fscore": _num(fsr),
@@ -166,7 +150,7 @@ def build_ranking() -> dict:
             "rank": rank, "pct": pct, "decile": decile,
             "composite": round(s["_composite"], 3),
             "momentum": rnd("momentum"), "quality": rnd("quality"),
-            "revision": rnd("revision"), "value": rnd("value"), "growth": rnd("growth"),
+            "value": rnd("value"), "growth": rnd("growth"),
         }
 
     # 스크리너용 상위 60 (이름 포함)
@@ -174,7 +158,7 @@ def build_ranking() -> dict:
         "code": s["code"], "name": s["name"], "sector": s.get("sector"),
         "pct": ranks[s["code"]]["pct"], "decile": ranks[s["code"]]["decile"],
         "momentum": ranks[s["code"]]["momentum"], "quality": ranks[s["code"]]["quality"],
-        "revision": ranks[s["code"]]["revision"], "value": ranks[s["code"]]["value"],
+        "value": ranks[s["code"]]["value"], "growth": ranks[s["code"]]["growth"],
     } for s in ranked[:60]]
 
     return {

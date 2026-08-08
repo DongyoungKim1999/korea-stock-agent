@@ -699,8 +699,8 @@ function renderFactorProfile(code) {
   el.innerHTML =
     `<div class="fp-head"><span class="fp-title">🏆 팩터 종합 <span class="fp-muted">(전종목 ${(fr.universe || 0).toLocaleString("ko-KR")}개 중)</span></span>` +
     `<span class="fp-rank" style="color:${rankColor}">상위 ${topPct}% · ${r.decile}분위</span></div>` +
-    pillar("모멘텀", r.momentum) + pillar("퀄리티", r.quality) + pillar("리비전", r.revision) + pillar("밸류", r.value) + pillar("성장", r.growth) +
-    `<div class="fp-note">모멘텀·퀄리티·리비전·밸류·성장을 전종목 z-점수로 표준화한 횡단면 랭킹. 0=평균, +면 우수. 리비전(목표가·투자의견 상향)·밸류는 데이터 있는 종목만 반영(누적되며 점진 확대).</div>`;
+    pillar("모멘텀", r.momentum) + pillar("퀄리티", r.quality) + pillar("밸류", r.value) + pillar("성장", r.growth) +
+    `<div class="fp-note">모멘텀·퀄리티·밸류·성장을 전종목 z-점수로 표준화한 횡단면 랭킹. 0=평균, +면 우수. 밸류는 PER 역산 가능 종목만 반영(점진 확대).</div>`;
 }
 
 function renderFactorTop() {
@@ -1031,7 +1031,59 @@ function _valcNum(id) {
   return Number.isFinite(v) ? v : null;
 }
 
+// 계산기 모드: "dcf"(잉여현금흐름) | "psr"(매출 기반). FCFF 적자기업은 DCF가 무의미해 매출배수(PSR)로 평가한다.
+let valcMode = "dcf";
+
+function setValcMode(mode) {
+  valcMode = mode === "psr" ? "psr" : "dcf";
+  document.getElementById("valc-grid-dcf").hidden = valcMode !== "dcf";
+  document.getElementById("valc-grid-psr").hidden = valcMode !== "psr";
+  document.querySelectorAll("#valc-mode button").forEach((b) =>
+    b.classList.toggle("active", b.dataset.mode === valcMode));
+  computeValuation();
+}
+
 function computeValuation() {
+  return valcMode === "psr" ? computeValuationPSR() : computeValuationDCF();
+}
+
+// 매출 기반(PSR): 적정 시가총액 = 예상매출 × 목표PSR, 적정주가 = 시총 ÷ 발행주식수.
+// 적자로 이익·현금흐름이 무의미한 성장기업에 쓰는 표준 간이법(PSR=시총/매출, 부채는 미반영).
+function computeValuationPSR() {
+  const revenue = _valcNum("valc-revenue");   // 억원/년
+  const psr = _valcNum("valc-psr");           // 배
+  const shares = _valcNum("valc-shares");     // 백만주
+  const price = _valcNum("valc-price");       // 원
+
+  const fairEl = document.getElementById("valc-fair");
+  const upEl = document.getElementById("valc-upside");
+  const bdEl = document.getElementById("valc-breakdown");
+
+  if (revenue == null || psr == null || shares == null) {
+    fairEl.textContent = "-"; upEl.textContent = ""; bdEl.textContent = "예상 매출·목표 PSR·주식수를 입력하면 적정주가가 계산됩니다.";
+    return;
+  }
+  if (revenue <= 0 || psr <= 0 || shares <= 0) {
+    fairEl.textContent = "-"; upEl.textContent = ""; bdEl.innerHTML = `<span style="color:var(--warning)">매출·PSR·주식수는 0보다 커야 합니다.</span>`;
+    return;
+  }
+  const mktCap = revenue * psr;                // 적정 시가총액(주주가치, 억원)
+  const perShare = (mktCap * 100) / shares;    // 원 (억*100/백만주)
+
+  fairEl.textContent = `${Math.round(perShare).toLocaleString("ko-KR")}원`;
+  const fmt = (v) => (Math.abs(v) >= 10000 ? `${(v / 10000).toFixed(1)}조` : `${Math.round(v).toLocaleString("ko-KR")}억`);
+  bdEl.innerHTML = `적정 시가총액 ${fmt(mktCap)} = 매출 ${fmt(revenue)} × PSR ${psr}배 <span style="color:var(--text-muted)">· 순부채 미반영(간이)</span>`;
+
+  if (price && perShare > 0) {
+    const upside = (perShare / price - 1) * 100;
+    const c = upside >= 0 ? "var(--good)" : "var(--critical)";
+    upEl.innerHTML = `현재가 ${Math.round(price).toLocaleString("ko-KR")} 대비 <b style="color:${c}">${upside >= 0 ? "+" : ""}${upside.toFixed(0)}%</b> ${upside >= 0 ? "(저평가 여력)" : "(고평가)"}`;
+  } else {
+    upEl.textContent = "";
+  }
+}
+
+function computeValuationDCF() {
   const fcff0 = _valcNum("valc-fcff");        // 억원
   const g1 = _valcNum("valc-g1");             // %
   const years = _valcNum("valc-years");
@@ -1158,6 +1210,35 @@ async function autofillValuation(code) {
   // FCFF(억원)·순부채(억원) — 재무 파이프라인 valuation_inputs
   if (vi) { set("valc-fcff", vi.fcff_eok); set("valc-netdebt", vi.net_debt_eok); }
 
+  // 매출 기반(PSR) 입력: 예상매출(earnings_trend 최신 연도, 원→억)·목표PSR(현재 PSR=시총/매출 기본값)
+  let revEok = null;
+  if (fund && fund.status === "ok" && Array.isArray(fund.earnings_trend)) {
+    for (let i = fund.earnings_trend.length - 1; i >= 0; i--) {
+      const rv = fund.earnings_trend[i] && fund.earnings_trend[i].revenue;
+      if (rv) { revEok = rv / 1e8; break; }
+    }
+  }
+  if (revEok != null) set("valc-revenue", Math.round(revEok));
+  if (revEok && mcEok) {
+    // 목표 기본값 = 현재 PSR(시총/매출). 이러면 자동채움 상태의 적정주가=현재가(중립 출발점)라 왜곡이 없다.
+    // 상한을 넉넉히(500) 둬 고PSR 적자 바이오까지 실제 배수로 채운다 — 낮은 상한에 걸려 기본값으로
+    // 폴백하면 정상 종목이 '심각한 고평가'로 잘못 표시되므로 폴백을 만들지 않는다(못 채우면 빈칸).
+    const curPsr = mcEok / revEok;
+    if (curPsr > 0 && curPsr < 500) set("valc-psr", Math.round(curPsr * 10) / 10);
+  }
+
+  // FCFF 적자면 DCF가 무의미 → 매출 기반(PSR)으로 자동 전환하고 안내. 그 외엔 현금흐름(DCF).
+  const modeNote = document.getElementById("valc-modenote");
+  if (vi && vi.fcff_eok != null && vi.fcff_eok < 0) {
+    setValcMode("psr");
+    modeNote.hidden = false;
+    modeNote.innerHTML = `이 기업은 잉여현금흐름(FCFF)이 <b>적자</b>라 DCF가 부적합 — <b>매출 기반(PSR)</b>으로 전환했습니다. 적자기업은 매출성장·시장점유로 평가합니다.`;
+  } else {
+    setValcMode("dcf");
+    modeNote.hidden = true;
+    modeNote.textContent = "";
+  }
+
   // 고성장률: 매출성장률을 합리적 범위로 보정
   const roe = fund && fund.status === "ok" && fund.quality ? fund.quality.roe_pct : null;
   const fs = fund && fund.status === "ok" && fund.quality ? fund.quality.f_score : null;
@@ -1178,8 +1259,10 @@ async function autofillValuation(code) {
 }
 
 function wireValuationCalc() {
-  ["valc-fcff", "valc-g1", "valc-years", "valc-gt", "valc-wacc", "valc-netdebt", "valc-shares", "valc-price"]
+  ["valc-fcff", "valc-g1", "valc-years", "valc-gt", "valc-wacc", "valc-netdebt", "valc-revenue", "valc-psr", "valc-shares", "valc-price"]
     .forEach((id) => document.getElementById(id).addEventListener("input", computeValuation));
+  document.querySelectorAll("#valc-mode button").forEach((b) =>
+    b.addEventListener("click", () => setValcMode(b.dataset.mode)));
   const toggle = document.getElementById("valc-toggle");
   const body = document.getElementById("valc-body");
   toggle.addEventListener("click", () => {
