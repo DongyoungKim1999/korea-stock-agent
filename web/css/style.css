@@ -71,6 +71,13 @@ html, body {
 }
 .brand-mark { color: var(--series-1); }
 
+.easy-link {
+  white-space: nowrap; flex-shrink: 0; font-size: 13px; font-weight: 600; text-decoration: none;
+  color: var(--good); border: 1px solid var(--good); border-radius: 999px; padding: 7px 13px;
+  transition: background .12s;
+}
+.easy-link:hover { background: rgba(22, 163, 74, .14); }
+
 .search-wrap {
   flex: 1;
   max-width: 760px;
