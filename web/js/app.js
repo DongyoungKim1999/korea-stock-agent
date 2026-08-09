@@ -1076,8 +1076,10 @@ function computeValuationPSR() {
 
   if (price && perShare > 0) {
     const upside = (perShare / price - 1) * 100;
-    const c = upside >= 0 ? "var(--good)" : "var(--critical)";
-    upEl.innerHTML = `현재가 ${Math.round(price).toLocaleString("ko-KR")} 대비 <b style="color:${c}">${upside >= 0 ? "+" : ""}${upside.toFixed(0)}%</b> ${upside >= 0 ? "(저평가 여력)" : "(고평가)"}`;
+    const near = Math.abs(upside) < 1.5;   // 사실상 현재가와 동일 — '±0% 고평가'로 오해되지 않게 중립 표기
+    const c = near ? "var(--text-secondary)" : (upside >= 0 ? "var(--good)" : "var(--critical)");
+    const label = near ? "(현재가 수준)" : (upside >= 0 ? "(저평가 여력)" : "(고평가)");
+    upEl.innerHTML = `현재가 ${Math.round(price).toLocaleString("ko-KR")} 대비 <b style="color:${c}">${upside >= 0 ? "+" : ""}${upside.toFixed(0)}%</b> ${label}`;
   } else {
     upEl.textContent = "";
   }
@@ -1130,8 +1132,10 @@ function computeValuationDCF() {
 
   if (price && perShare > 0) {
     const upside = (perShare / price - 1) * 100;
-    const c = upside >= 0 ? "var(--good)" : "var(--critical)";
-    upEl.innerHTML = `현재가 ${Math.round(price).toLocaleString("ko-KR")} 대비 <b style="color:${c}">${upside >= 0 ? "+" : ""}${upside.toFixed(0)}%</b> ${upside >= 0 ? "(저평가 여력)" : "(고평가)"}`;
+    const near = Math.abs(upside) < 1.5;   // 사실상 현재가와 동일 — '±0% 고평가'로 오해되지 않게 중립 표기
+    const c = near ? "var(--text-secondary)" : (upside >= 0 ? "var(--good)" : "var(--critical)");
+    const label = near ? "(현재가 수준)" : (upside >= 0 ? "(저평가 여력)" : "(고평가)");
+    upEl.innerHTML = `현재가 ${Math.round(price).toLocaleString("ko-KR")} 대비 <b style="color:${c}">${upside >= 0 ? "+" : ""}${upside.toFixed(0)}%</b> ${label}`;
   } else {
     upEl.textContent = "";
   }
@@ -1207,7 +1211,7 @@ async function autofillValuation(code) {
   const mcEok = q ? parseMarketCapEok(q.market_cap_text) : null;
   let sharesM = (mcEok && q && q.price) ? (mcEok * 100) / q.price : null;
   if (sharesM == null && val && val.shares_estimated) sharesM = val.shares_estimated / 1e6;
-  if (sharesM != null) set("valc-shares", Math.round(sharesM * 10) / 10);
+  if (sharesM != null) set("valc-shares", Math.round(sharesM * 100) / 100);
 
   // FCFF(억원)·순부채(억원) — 재무 파이프라인 valuation_inputs
   if (vi) { set("valc-fcff", vi.fcff_eok); set("valc-netdebt", vi.net_debt_eok); }
@@ -1220,13 +1224,15 @@ async function autofillValuation(code) {
       if (rv) { revEok = rv / 1e8; break; }
     }
   }
-  if (revEok != null) set("valc-revenue", Math.round(revEok));
+  if (revEok != null) set("valc-revenue", Math.round(revEok * 10) / 10);
   if (revEok && mcEok) {
     // 목표 기본값 = 현재 PSR(시총/매출). 이러면 자동채움 상태의 적정주가=현재가(중립 출발점)라 왜곡이 없다.
     // 상한을 넉넉히(500) 둬 고PSR 적자 바이오까지 실제 배수로 채운다 — 낮은 상한에 걸려 기본값으로
     // 폴백하면 정상 종목이 '심각한 고평가'로 잘못 표시되므로 폴백을 만들지 않는다(못 채우면 빈칸).
+    // 3자리까지 채운다: 저PSR(1 미만) 종목을 1자리로 반올림하면(예 0.432→0.4) 7~8% 오차가 나
+    // 중립이어야 할 자동채움이 '고평가'로 왜곡되던 문제를 없앤다.
     const curPsr = mcEok / revEok;
-    if (curPsr > 0 && curPsr < 500) set("valc-psr", Math.round(curPsr * 10) / 10);
+    if (curPsr > 0 && curPsr < 500) set("valc-psr", Math.round(curPsr * 1000) / 1000);
   }
 
   // FCFF 적자면 DCF가 무의미 → 매출 기반(PSR)으로 자동 전환하고 안내. 그 외엔 현금흐름(DCF).
