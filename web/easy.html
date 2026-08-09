@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>쉬운 주식 도우미 — 초보자용</title>
+  <meta name="description" content="초보자를 위한 쉬운 주식 참고 도우미 — 회사가 얼마나 튼튼한지 신호등으로 한눈에.">
+  <link rel="stylesheet" href="css/easy.css">
+</head>
+<body>
+  <header class="hd">
+    <div class="hd-in">
+      <h1>🌱 쉬운 주식 도우미</h1>
+      <p class="hd-sub">회사가 얼마나 <b>튼튼한지</b> 쉬운 말로 알려드려요. 어려운 용어는 뺐어요.</p>
+      <a class="hd-expert" href="index.html">전문가용 대시보드 →</a>
+    </div>
+  </header>
+
+  <div class="safety" role="note">
+    <div class="safety-ic">⚠️</div>
+    <div>
+      <b>이건 '사라·팔라'는 조언이 아니에요.</b> 회사가 튼튼한지 쉽게 보여주는 <b>참고 정보</b>일 뿐이에요.
+      주식은 오르내리며 <b>원금을 잃을 수도</b> 있어요. 최종 결정과 책임은 본인에게 있어요.
+    </div>
+  </div>
+
+  <main class="wrap">
+    <!-- 1. 검색 → 신호등 결론 -->
+    <section class="card">
+      <h2>궁금한 회사를 찾아보세요</h2>
+      <p class="muted">회사 이름을 입력하면 초보자 눈높이로 쉽게 풀어드려요.</p>
+      <div class="search">
+        <input id="q" type="text" inputmode="search" autocomplete="off"
+               placeholder="예) 삼성전자, 기아, 카카오…" aria-label="회사 이름 검색">
+        <div id="q-results" class="q-results" hidden></div>
+      </div>
+      <div id="verdict" class="verdict" hidden></div>
+      <div id="verdict-empty" class="verdict-empty">위에서 회사를 검색하거나, 아래 <b>안심 리스트</b>에서 하나 눌러보세요.</div>
+    </section>
+
+    <!-- 2. 초보자 안심 리스트 -->
+    <section class="card">
+      <h2>초보자가 봐도 안심인 큰 회사들</h2>
+      <p class="muted">
+        크고(대형) · 꾸준히 흑자이고 · 빚이 적은 우량 회사만 자동으로 추린 <b>참고 목록</b>이에요.
+        (여기 있다고 무조건 오르는 건 아니에요.)
+      </p>
+      <div id="picks" class="picks">
+        <div class="picks-loading">불러오는 중…</div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="ft">
+    <p><b>다시 한 번</b> — 이 도우미는 투자 참고 정보이며 투자자문·매매권유가 아니에요.
+       실제 투자 판단과 그 결과에 대한 책임은 이용자 본인에게 있어요. 시세는 네이버 포털 기준이며 실시간이 아닐 수 있어요.</p>
+    <p class="ft-small">데이터: DART 공시 재무 + 네이버 포털 시세. 하루 2회 자동 갱신.</p>
+  </footer>
+
+  <script src="js/config.js"></script>
+  <script src="js/easy.js"></script>
+</body>
+</html>

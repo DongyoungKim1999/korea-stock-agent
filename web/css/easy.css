@@ -1,0 +1,133 @@
+:root {
+  --bg: #f4f7fb;
+  --card: #ffffff;
+  --ink: #1a2233;
+  --ink-soft: #55607a;
+  --muted: #8a93a8;
+  --line: #e3e8f0;
+  --brand: #2f6bff;
+  --green: #16a34a; --green-bg: #e9f9ef;
+  --yellow: #d97706; --yellow-bg: #fff5e6;
+  --red: #dc2626; --red-bg: #fdecec;
+  --shadow: 0 2px 14px rgba(30, 50, 90, .07);
+  --radius: 16px;
+  --font: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", "맑은 고딕", system-ui, sans-serif;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--font);
+  font-size: 17px; line-height: 1.6; -webkit-text-size-adjust: 100%;
+}
+
+/* ---------- 헤더 ---------- */
+.hd { background: linear-gradient(135deg, #2f6bff 0%, #5b8bff 100%); color: #fff; }
+.hd-in { max-width: 720px; margin: 0 auto; padding: 26px 20px 24px; position: relative; }
+.hd h1 { margin: 0 0 6px; font-size: 27px; font-weight: 800; letter-spacing: -.4px; }
+.hd-sub { margin: 0; font-size: 16px; color: #eaf1ff; }
+.hd-sub b { color: #fff; }
+.hd-expert {
+  position: absolute; top: 20px; right: 18px; color: #eaf1ff; text-decoration: none;
+  font-size: 13px; opacity: .9; border-bottom: 1px solid rgba(255,255,255,.4); padding-bottom: 1px;
+}
+
+/* ---------- 안전 배너 ---------- */
+.safety {
+  max-width: 720px; margin: 16px auto 0; padding: 14px 16px; display: flex; gap: 12px;
+  background: #fff7ed; border: 1px solid #ffd9a8; border-radius: var(--radius);
+  color: #7c4a12; font-size: 14.5px; line-height: 1.55;
+}
+.safety-ic { font-size: 22px; line-height: 1.2; }
+.safety b { color: #663c0c; }
+
+/* ---------- 레이아웃 ---------- */
+.wrap { max-width: 720px; margin: 0 auto; padding: 16px 16px 8px; }
+.card {
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+  box-shadow: var(--shadow); padding: 20px 18px; margin-bottom: 18px;
+}
+.card h2 { margin: 0 0 4px; font-size: 20px; font-weight: 800; letter-spacing: -.3px; }
+.muted { color: var(--ink-soft); font-size: 14.5px; margin: 0 0 14px; }
+
+/* ---------- 검색 ---------- */
+.search { position: relative; }
+#q {
+  width: 100%; padding: 15px 16px; font-size: 18px; font-family: var(--font);
+  border: 2px solid var(--line); border-radius: 12px; color: var(--ink); background: #fbfcfe;
+}
+#q:focus { outline: none; border-color: var(--brand); background: #fff; }
+.q-results {
+  position: absolute; z-index: 20; left: 0; right: 0; top: calc(100% + 6px);
+  background: #fff; border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow);
+  overflow: hidden; max-height: 340px; overflow-y: auto;
+}
+.q-item { padding: 13px 16px; cursor: pointer; border-bottom: 1px solid var(--line); display: flex; align-items: baseline; gap: 8px; }
+.q-item:last-child { border-bottom: none; }
+.q-item:hover, .q-item.active { background: #eef4ff; }
+.q-item b { font-size: 16px; }
+.q-item .code { color: var(--muted); font-size: 13px; }
+.q-empty { padding: 14px 16px; color: var(--muted); font-size: 14px; }
+
+/* ---------- 결론(신호등) ---------- */
+.verdict-empty { margin-top: 14px; padding: 18px; text-align: center; color: var(--muted); font-size: 14.5px;
+  border: 1.5px dashed var(--line); border-radius: 12px; }
+.verdict { margin-top: 16px; }
+.v-top { display: flex; align-items: center; gap: 14px; padding: 16px; border-radius: 14px; }
+.v-top.green { background: var(--green-bg); }
+.v-top.yellow { background: var(--yellow-bg); }
+.v-top.red { background: var(--red-bg); }
+.v-light { font-size: 40px; line-height: 1; }
+.v-head b { display: block; font-size: 20px; font-weight: 800; margin-bottom: 2px; }
+.v-top.green .v-head b { color: var(--green); }
+.v-top.yellow .v-head b { color: var(--yellow); }
+.v-top.red .v-head b { color: var(--red); }
+.v-head span { font-size: 14.5px; color: var(--ink-soft); }
+.v-name { font-size: 15px; color: var(--ink-soft); margin: 14px 2px 6px; }
+.v-name b { color: var(--ink); font-size: 17px; }
+.v-price { font-variant-numeric: tabular-nums; }
+.v-price .up { color: var(--red); } .v-price .down { color: var(--brand); }
+
+.v-bullets { list-style: none; margin: 10px 0 0; padding: 0; }
+.v-bullets li {
+  display: flex; gap: 10px; align-items: flex-start; padding: 11px 2px; border-top: 1px solid var(--line);
+  font-size: 16px;
+}
+.v-bullets li .ic { font-size: 19px; line-height: 1.35; flex: none; width: 24px; text-align: center; }
+.v-bullets li .tx { color: var(--ink); }
+.v-bullets li .tx small { display: block; color: var(--muted); font-size: 12.5px; }
+
+.v-caution {
+  margin-top: 14px; padding: 13px 15px; background: #f6f8fc; border-radius: 12px;
+  font-size: 13.5px; color: var(--ink-soft); line-height: 1.55;
+}
+.v-caution b { color: var(--ink); }
+
+/* ---------- 안심 리스트 ---------- */
+.picks { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.picks-loading { color: var(--muted); grid-column: 1 / -1; padding: 10px 2px; }
+.pick {
+  text-align: left; background: #fbfcfe; border: 1px solid var(--line); border-radius: 14px;
+  padding: 14px 14px 13px; cursor: pointer; font-family: var(--font); transition: border-color .12s, transform .06s;
+}
+.pick:hover { border-color: var(--brand); }
+.pick:active { transform: scale(.99); }
+.pick-top { display: flex; align-items: center; gap: 7px; margin-bottom: 5px; }
+.pick-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--green); flex: none; }
+.pick-name { font-size: 16.5px; font-weight: 800; color: var(--ink); }
+.pick-sector { font-size: 12px; color: var(--muted); margin-left: auto; }
+.pick-reason { font-size: 13px; color: var(--ink-soft); line-height: 1.5; }
+.pick-tags { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 5px; }
+.tag { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: #eef4ff; color: #2f5bd0; }
+.tag.big { background: #e9f9ef; color: var(--green); }
+
+/* ---------- 푸터 ---------- */
+.ft { max-width: 720px; margin: 8px auto 0; padding: 4px 20px 40px; color: var(--muted); font-size: 13px; line-height: 1.6; }
+.ft b { color: var(--ink-soft); }
+.ft-small { font-size: 12px; margin-top: 6px; }
+
+@media (max-width: 460px) {
+  body { font-size: 16px; }
+  .picks { grid-template-columns: 1fr; }
+  .hd-expert { position: static; display: inline-block; margin-top: 10px; }
+}

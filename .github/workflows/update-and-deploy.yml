@@ -12,6 +12,7 @@ on:
       # 스스로를 재트리거하는 무한루프가 될 수 있다(기본 GITHUB_TOKEN은 재트리거를 막아주지만
       # 방어적으로 경로도 분리해둔다).
       - "web/index.html"
+      - "web/easy.html"
       - "web/css/**"
       - "web/js/**"
       - "automation/**"
