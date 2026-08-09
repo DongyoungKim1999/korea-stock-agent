@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-08-09T03:32:18.336789+09:00",
+  "generated_at": "2026-08-10T03:00:29.474755+09:00",
   "steps_ok": {
     "company_index": true,
     "technical": true,
@@ -7,7 +7,8 @@
     "momentum": true,
     "estimate_revisions": true,
     "factor_ranking": true,
-    "filing_insights": true
+    "filing_insights": true,
+    "beginner_picks": true
   },
   "watchlist_count": 120
 }
