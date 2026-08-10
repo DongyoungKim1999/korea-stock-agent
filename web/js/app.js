@@ -700,7 +700,7 @@ function renderFactorProfile(code) {
     `<div class="fp-head"><span class="fp-title">🏆 팩터 종합 <span class="fp-muted">(전종목 ${(fr.universe || 0).toLocaleString("ko-KR")}개 중)</span></span>` +
     `<span class="fp-rank" style="color:${rankColor}">상위 ${topPct}% · ${r.decile}분위</span></div>` +
     pillar("모멘텀", r.momentum) + pillar("퀄리티", r.quality) + pillar("밸류", r.value) + pillar("성장", r.growth) +
-    `<div class="fp-note">모멘텀·퀄리티·밸류·성장을 전종목 z-점수로 표준화한 횡단면 랭킹. 0=평균, +면 우수. 밸류는 PER 역산 가능 종목만 반영(점진 확대).</div>`;
+    `<div class="fp-note">모멘텀·퀄리티·밸류·성장을 전종목 z-점수로 표준화한 랭킹. 0=평균, +면 우수. 밸류는 PER 역산 가능 종목만 반영(점진 확대).</div>`;
 }
 
 function renderFactorTop() {
@@ -1019,7 +1019,7 @@ function buildOneliner(tags) {
   else if (has("약세")) parts.push("단기 기술적 약세");
   if (has("고변동성") || has("바닥권") || has("고점권")) parts.push("리스크 유의");
   const body = parts.length ? parts.join(" · ") : "네 축 모두 뚜렷한 편중 없이 중립적";
-  return `${body}. (투자 판단·책임은 본인에게 있으며, 매수·매도 권유가 아닌 특성 요약입니다.)`;
+  return `${body}.`;
 }
 
 // ---------- 밸류에이션 계산기 (2단계 FCFF DCF) ----------
