@@ -8,9 +8,10 @@ const state = {
   companyIndex: [],   // 코스피+코스닥 전체 검색 인덱스 (data/company_index.json)
   meta: null,
   currentCode: null,
-  currentRange: 90,
+  currentRange: 300,
   techCache: {},
   fundCache: {},
+  chartCache: {},     // code → 장기(≈5년) OHLCV rows (차트·패턴용, Worker /ohlcv)
   lastRenderedItems: [],
 };
 
@@ -269,8 +270,7 @@ function renderTechnical(data) {
   document.getElementById("tech-score-sub").textContent = TECH_LABELS[data.indicators.moving_averages.alignment] || "";
   renderGauge(data.score);
 
-  const rows = data.price_series.slice(-state.currentRange);
-  renderPriceChart(document.getElementById("price-chart"), rows, data.indicators.levels);
+  renderTechnicalChart(data);
 
   const ind = data.indicators;
   const rowsDef = [
@@ -292,6 +292,41 @@ function renderTechnical(data) {
   renderRiskReward(data.code); // 지지선 확보 — 목표주가(라이브)와 합쳐 손익비 산출
   applyRelativeStrength(data);  // 상대강도(vs 코스피) 반영 → 점수 재보정 + RS 표시
   warnEl.textContent = humanizeWarnings(data.warnings);
+}
+
+// 캔들 차트 렌더 + 패턴 마커. 장기(≈5년) 데이터를 우선 쓰되, 짧은 시계열밖에 없으면(워치리스트 300일)
+// 우선 그걸로 즉시 그리고, 백그라운드로 Worker /ohlcv에서 장기 데이터를 받아 패턴과 함께 업그레이드한다.
+function renderTechnicalChart(data) {
+  const el = document.getElementById("price-chart");
+  const code = data.code || state.currentCode;
+  const base = state.chartCache[code] || data.price_series || [];
+  const draw = (rows) => {
+    const sliced = rows.slice(-state.currentRange);
+    const patterns = typeof detectCandlePatterns === "function" ? detectCandlePatterns(sliced) : [];
+    renderPriceChart(el, sliced, data.indicators && data.indicators.levels, patterns);
+  };
+  draw(base);
+  if (!state.chartCache[code] && base.length < 800) {
+    ensureChartRows(code, data.price_series).then((long) => {
+      if (state.currentCode !== code || !long || long.length <= base.length) return;
+      state.chartCache[code] = long;
+      draw(long);
+    });
+  }
+}
+
+// 차트용 장기 OHLCV(≈5년)를 Worker /ohlcv에서 받아 캐시. 실패 시 넘겨받은 짧은 시계열로 폴백.
+async function ensureChartRows(code, shortRows) {
+  if (state.chartCache[code]) return state.chartCache[code];
+  const url = typeof ohlcvUrl === "function" ? ohlcvUrl(code) : null;
+  if (!url) return shortRows;
+  try {
+    const res = await fetch(url, { cache: "no-store" });
+    const d = await res.json();
+    const rows = d && Array.isArray(d.rows) ? d.rows : null;
+    if (rows && rows.length) { state.chartCache[code] = rows; return rows; }
+  } catch (_) {}
+  return shortRows;
 }
 
 // ---------- 상대강도(RS) — 시장(코스피) 대비 수익률로 점수를 벌려 비교 가능하게 ----------

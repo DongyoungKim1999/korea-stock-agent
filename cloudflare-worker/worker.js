@@ -151,7 +151,7 @@ async function handleOhlcv(code, origin) {
     return jsonResponse({ error: "종목코드(6자리) 또는 지수 심볼이 필요합니다" }, 400, origin);
   }
   const end = new Date(Date.now() + 9 * 3600 * 1000); // KST
-  const start = new Date(end.getTime() - 460 * 24 * 3600 * 1000); // ~300 거래일 확보용 여유
+  const start = new Date(end.getTime() - 2000 * 24 * 3600 * 1000); // ~5.5년(≈1,250 거래일) — 장기 차트·패턴용
   const fmt = (d) => d.toISOString().slice(0, 10).replace(/-/g, "");
   const upstream = `https://api.finance.naver.com/siseJson.naver?symbol=${code}&requestType=1&startTime=${fmt(start)}&endTime=${fmt(end)}&timeframe=day`;
   let text;

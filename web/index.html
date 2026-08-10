@@ -76,10 +76,11 @@
       <div class="trade-context" id="trade-context" hidden></div>
 
       <div class="range-tabs" id="range-tabs">
-        <button data-range="30">1개월</button>
-        <button data-range="90" class="active">3개월</button>
+        <button data-range="90">3개월</button>
         <button data-range="180">6개월</button>
-        <button data-range="300">1년</button>
+        <button data-range="300" class="active">1년</button>
+        <button data-range="750">3년</button>
+        <button data-range="1250">5년</button>
       </div>
 
       <div class="chart-legend">
@@ -89,6 +90,12 @@
         <span style="margin-left:auto;color:var(--text-muted)"><i class="dot" style="background:var(--candle-up)"></i>양봉(상승) <i class="dot" style="background:var(--candle-down);margin-left:8px"></i>음봉(하락)</span>
       </div>
       <div id="price-chart" class="price-chart"></div>
+      <div class="pattern-legend">
+        <span>캔들 패턴</span>
+        <span class="pl-buy">▲ 매수(상승 반전)</span>
+        <span class="pl-sell">▼ 매도(하락 반전)</span>
+        <span class="pl-hint">화살표에 마우스를 올리면 패턴명·신뢰도 표시</span>
+      </div>
       <div class="levels-row" id="levels-row">
         <span class="lv-item lv-support">지지 <b id="lv-support">-</b></span>
         <span class="lv-item lv-resistance">저항 <b id="lv-resistance">-</b></span>
@@ -317,6 +324,7 @@
 </div>
 
 <script src="js/config.js"></script>
+<script src="js/patterns.js"></script>
 <script src="js/charts.js"></script>
 <script src="js/indicators.js"></script>
 <script src="js/app.js"></script>

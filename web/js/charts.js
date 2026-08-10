@@ -45,7 +45,13 @@ function simpleMovingAverage(rows, period) {
 let _priceChart = null;
 let _priceChartResizeObs = null;
 
-function renderPriceChart(containerEl, rows, levels) {
+function _timeToStr(t) {
+  if (typeof t === "string") return t;
+  if (t && typeof t === "object" && "year" in t) return `${t.year}-${String(t.month).padStart(2, "0")}-${String(t.day).padStart(2, "0")}`;
+  return String(t);
+}
+
+function renderPriceChart(containerEl, rows, levels, patterns) {
   if (_priceChartResizeObs) { _priceChartResizeObs.disconnect(); _priceChartResizeObs = null; }
   if (_priceChart) { _priceChart.remove(); _priceChart = null; }
   containerEl.innerHTML = "";
@@ -76,6 +82,46 @@ function renderPriceChart(containerEl, rows, levels) {
     priceFormat: krwPriceFormat,
   });
   candleSeries.setData(rows.map(r => ({ time: r.date, open: r.open, high: r.high, low: r.low, close: r.close })));
+
+  // 캔들 패턴 매수/매도 마커 + 마우스오버 상세 툴팁 (investing.com 스타일)
+  if (patterns && patterns.length) {
+    candleSeries.setMarkers(patterns.map(p => ({
+      time: p.date,
+      position: p.type === "buy" ? "belowBar" : "aboveBar",
+      color: p.type === "buy" ? PALETTE.good : PALETTE.critical,
+      shape: p.type === "buy" ? "arrowUp" : "arrowDown",
+      text: "",
+    })));
+
+    containerEl.style.position = "relative";
+    const tip = document.createElement("div");
+    tip.className = "pattern-tip";
+    tip.style.display = "none";
+    containerEl.appendChild(tip);
+    const byTime = {};
+    patterns.forEach(p => { byTime[p.date] = p; });
+
+    chart.subscribeCrosshairMove((param) => {
+      if (!param.time || !param.point) { tip.style.display = "none"; return; }
+      const p = byTime[_timeToStr(param.time)];
+      if (!p) { tip.style.display = "none"; return; }
+      const buy = p.type === "buy";
+      const col = buy ? PALETTE.good : PALETTE.critical;
+      tip.innerHTML =
+        `<div class="pt-name" style="color:${col}">${buy ? "▲" : "▼"} ${p.name}</div>` +
+        `<div class="pt-sig">${buy ? "매수 신호 · 상승 반전" : "매도 신호 · 하락 반전"}</div>` +
+        `<div class="pt-meta">신뢰도 <b>${p.confidence}</b> · ${p.date}</div>` +
+        (p.desc ? `<div class="pt-desc">${p.desc}</div>` : "");
+      tip.style.display = "block";
+      const w = containerEl.clientWidth;
+      let x = param.point.x + 14;
+      if (x + 190 > w) x = Math.max(4, param.point.x - 196);
+      let y = param.point.y + 12;
+      if (y + 96 > 220) y = Math.max(4, param.point.y - 100);
+      tip.style.left = x + "px";
+      tip.style.top = y + "px";
+    });
+  }
 
   // 지지/저항 수평선 — 진입/이탈 참고. 저항=빨강(상단 벽), 지지=파랑(하단 바닥)
   if (levels) {
