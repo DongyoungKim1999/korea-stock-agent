@@ -1,7 +1,7 @@
 /* 쉬운 주식 도우미 (초보자용) — 기존 대시보드 데이터를 재활용해 '신호등 한 줄 결론'으로 보여준다.
    판정은 '회사가 얼마나 튼튼한가'(안전성)일 뿐, 매수 신호가 아니다. 전문용어는 쉬운 말로 번역한다. */
 
-const state = { companies: [], picks: [], fundCache: {}, curCode: null, lastQuote: null };
+const state = { companies: [], categories: [], catIndex: 0, fundCache: {}, curCode: null, lastQuote: null };
 const chatHistory = [];
 
 async function loadJSON(path) {
@@ -174,20 +174,38 @@ function runSearch(term) {
     it.addEventListener("click", () => selectStock(it.dataset.code, it.dataset.name)));
 }
 
-/* ---- 안심 리스트 ---- */
-function renderPicks() {
+/* ---- 성향별 추천 (탭) ---- */
+function pickCardHTML(p) {
+  const tags = (p.tags || []).map((t) => `<span class="tag ${t === "대형" ? "big" : ""}">${esc(t)}</span>`).join("");
+  return `<button class="pick" data-code="${esc(p.code)}" data-name="${esc(p.name)}">
+      <div class="pick-top"><span class="pick-dot"></span><span class="pick-name">${esc(p.name)}</span><span class="pick-sector">${esc(p.sector || "")}</span></div>
+      <div class="pick-reason">${esc(p.reason || "")}</div>
+      <div class="pick-tags">${tags}</div>
+    </button>`;
+}
+
+function renderCategory(i) {
+  state.catIndex = i;
+  const cat = state.categories[i];
+  document.querySelectorAll("#cat-tabs button").forEach((b, j) => b.classList.toggle("active", j === i));
+  document.getElementById("cat-desc").textContent = cat ? cat.desc : "";
   const el = document.getElementById("picks");
-  if (!state.picks.length) { el.innerHTML = `<div class="picks-loading">지금은 추천 목록을 불러올 수 없어요.</div>`; return; }
-  el.innerHTML = state.picks.map((p) => {
-    const tags = (p.tags || []).map((t) => `<span class="tag ${t === "대형" ? "big" : ""}">${esc(t)}</span>`).join("");
-    return `<button class="pick" data-code="${esc(p.code)}" data-name="${esc(p.name)}">
-        <div class="pick-top"><span class="pick-dot"></span><span class="pick-name">${esc(p.name)}</span><span class="pick-sector">${esc(p.sector || "")}</span></div>
-        <div class="pick-reason">${esc(p.reason || "")}</div>
-        <div class="pick-tags">${tags}</div>
-      </button>`;
-  }).join("");
+  const picks = cat && cat.picks ? cat.picks : [];
+  el.innerHTML = picks.length ? picks.map(pickCardHTML).join("") : `<div class="picks-loading">이 성향의 추천 종목이 지금은 없어요.</div>`;
   el.querySelectorAll(".pick").forEach((b) =>
     b.addEventListener("click", () => selectStock(b.dataset.code, b.dataset.name)));
+}
+
+function renderCategories() {
+  const tabs = document.getElementById("cat-tabs");
+  if (!state.categories.length) {
+    document.getElementById("picks").innerHTML = `<div class="picks-loading">지금은 추천 목록을 불러올 수 없어요.</div>`;
+    return;
+  }
+  tabs.innerHTML = state.categories.map((c, i) => `<button type="button" data-i="${i}">${esc(c.title)}</button>`).join("");
+  tabs.querySelectorAll("button").forEach((b) =>
+    b.addEventListener("click", () => renderCategory(parseInt(b.dataset.i, 10))));
+  renderCategory(0);
 }
 
 /* ---------------- 무엇이든 물어보기 (GPT) ---------------- */
@@ -281,9 +299,9 @@ async function init() {
 
   try {
     const bp = await loadJSON("data/beginner_picks.json");
-    state.picks = (bp && bp.status === "ok" && bp.picks) ? bp.picks : [];
-  } catch (_) { state.picks = []; }
-  renderPicks();
+    state.categories = (bp && bp.status === "ok" && bp.categories) ? bp.categories : [];
+  } catch (_) { state.categories = []; }
+  renderCategories();
 
   // ?code=로 특정 종목 바로 보기(부모님이 링크를 저장해 두는 용도)
   const urlCode = new URLSearchParams(location.search).get("code");

@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
-"""초보자용 '안심 종목' 리스트를 만든다 → web/data/beginner_picks.json.
+"""초보자용 추천 종목을 '투자 성향별'로 나눠 만든다 → web/data/beginner_picks.json.
 
-부모님처럼 뭘 골라야 할지 모르는 초보자에게 '큰 우량회사'만 추려 출발점을 준다. 유니버스는
-워치리스트(대형·유명 종목 120)로 한정하고, 그중 ①흑자(ROE>0·최근 순이익>0) ②재무 탄탄
-(안정성점수 높음) ③꾸준한 흑자 ④배당을 점수화해 상위 소수만 뽑는다. 한 업종에 쏠리지 않게
-업종당 최대 2개로 다양화한다. 순수 로컬 계산(재무 JSON만 읽음)이라 DART 없이도 재생성된다.
+부모님처럼 뭘 골라야 할지 모르는 초보자에게, 흑자·무경고 우량주(유니버스=워치리스트)를
+네 가지 성향으로 갈라 출발점을 준다:
+  · 대형주      — 규모(매출) 큰 대표 우량주
+  · 고배당주    — 배당수익률 높은 회사
+  · 고성장주    — 매출이 빠르게 크는 회사(변동성 안내 포함)
+  · 꾸준한 흑자주 — 최근 몇 년 연속 흑자 + 재무 탄탄
 
-'사라'는 리스트가 아니라 '초보자가 봐도 덜 위험한 큰 회사' 참고 목록이다 — 판단·책임은 사용자.
+공통 안전 필터: 흑자(ROE>0·최근 순이익>0) + 관리·특이 경고 없음 + 최소 규모. 순수 로컬 계산.
+'사라'는 목록이 아니라 성향별 참고 출발점 — 판단·책임은 사용자.
 """
 from __future__ import annotations
 
@@ -23,12 +26,9 @@ OUT_PATH = ROOT / "web" / "data" / "beginner_picks.json"
 
 KST = timezone(timedelta(hours=9))
 
-import math
-
-MAX_PICKS = 15        # 초보자가 훑기 좋게 소수 정예
-PER_SECTOR = 2        # 업종 쏠림 방지(다양한 산업을 보여준다)
-MIN_STABILITY = 3.0   # 안심 리스트는 재무가 최소 '보통 이상'인 것만
-MIN_REVENUE_EOK = 5000  # 매출 5천억 미만(소형주)은 변동성 커 초보자 안심 리스트에서 제외
+PER_CAT = 8            # 카테고리당 최대 종목 수
+MIN_REVENUE_EOK = 2000  # 매출 2천억 미만(소형주)은 변동성 커 제외
+MIN_STABILITY = 3.0    # 재무 최소 '보통 이상'
 
 
 def _num(x):
@@ -36,16 +36,15 @@ def _num(x):
 
 
 def _load(code: str) -> dict | None:
-    p = FUND_DIR / f"{code}.json"
     try:
-        d = json.loads(p.read_text(encoding="utf-8"))
+        d = json.loads((FUND_DIR / f"{code}.json").read_text(encoding="utf-8"))
     except Exception:
         return None
     return d if d.get("status") == "ok" else None
 
 
-def _evaluate(d: dict) -> dict | None:
-    """안심 점수 + 쉬운 이유. 흑자·재무탄탄 필터를 통과 못 하면 None(리스트 제외)."""
+def _extract(d: dict) -> dict | None:
+    """판정용 지표 추출. 공통 안전 필터(흑자·무경고·최소규모) 실패 시 None."""
     ss = _num(d.get("stability_score"))
     q = d.get("quality") or {}
     roe = _num(q.get("roe_pct"))
@@ -53,13 +52,14 @@ def _evaluate(d: dict) -> dict | None:
     fsr = (fs.get("score") / fs.get("max_score")) if fs.get("max_score") else None
     div = d.get("dividend") or {}
     dy = _num(div.get("dividend_yield_pct")) if div.get("status") == "ok" else None
+    g = d.get("growth") or {}
+    rev_g = _num((g.get("revenue_growth_yoy") or {}).get("target"))
     et = d.get("earnings_trend") or []
     nis = [_num(r.get("net_income")) for r in et]
     nis = [x for x in nis if x is not None]
     recent = nis[-3:]
     profit_ratio = (sum(1 for x in recent if x > 0) / len(recent)) if recent else 0.0
     latest_ni = nis[-1] if nis else None
-    # 매출(원)→억 = 회사 규모 대용치(시총은 라이브 데이터라 없음). 최신 연도 매출 사용.
     rev_eok = None
     for r in reversed(et):
         rv = _num(r.get("revenue"))
@@ -67,105 +67,92 @@ def _evaluate(d: dict) -> dict | None:
             rev_eok = rv / 1e8
             break
 
-    # 필터: 흑자(ROE>0·최근 순이익>0) + 재무 보통 이상 + 대형(매출 하한). 경고 있으면 제외.
     if roe is None or roe <= 0:
         return None
     if latest_ni is None or latest_ni <= 0:
         return None
-    if ss is None or ss < MIN_STABILITY:
+    if d.get("warnings"):
         return None
     if rev_eok is None or rev_eok < MIN_REVENUE_EOK:
         return None
-    if d.get("warnings"):   # 관리·특이 경고가 있으면 초보자 안심 리스트에서 제외
-        return None
-
-    # 규모 점수: 매출 로그 스케일(5천억=0 ~ 300조≈1). 대형일수록 초보자에게 덜 위험.
-    size = (math.log10(rev_eok) - math.log10(MIN_REVENUE_EOK)) / (math.log10(3_000_000) - math.log10(MIN_REVENUE_EOK))
-    size = min(max(size, 0.0), 1.0)
-
-    # 점수: 안정성 0.30 + 규모 0.20 + 꾸준한흑자 0.15 + F-Score 0.15 + 배당 0.10 + ROE 0.10
-    score = (
-        (ss / 5) * 0.30
-        + size * 0.20
-        + profit_ratio * 0.15
-        + (fsr if fsr is not None else 0.5) * 0.15
-        + (min(dy, 5.0) / 5 if dy else 0.0) * 0.10
-        + (min(max(roe, 0.0), 25.0) / 25) * 0.10
-    )
-
-    # 쉬운 말 이유(강점 위주 2~3개) + 태그
-    reasons, tags = [], []
-    if rev_eok >= 50000:   # 매출 5조 이상 = 누구나 아는 대형사
-        tags.append("대형")
-    if ss >= 4.0:
-        reasons.append("빚이 적고 재무가 탄탄해요")
-        tags.append("재무탄탄")
-    elif ss >= 3.5:
-        reasons.append("재무가 비교적 안정적이에요")
-    if profit_ratio >= 0.99 and len(recent) >= 2:
-        reasons.append("최근 몇 년 꾸준히 흑자예요")
-        tags.append("꾸준한흑자")
-    if roe >= 12:
-        reasons.append("돈을 잘 버는 회사예요")
-        tags.append("수익성좋음")
-    if dy and dy >= 1.5:
-        reasons.append(f"배당을 약 {dy:.1f}% 줘요")
-        tags.append("배당")
-    if not reasons:
-        reasons.append("큰 회사이고 흑자예요")
-    reason = " · ".join(reasons[:3])
 
     return {
-        "score": round(score, 4),
-        "reason": reason,
-        "tags": tags,
-        "stability_score": ss,
-        "roe_pct": round(roe, 1),
-        "dividend_yield_pct": round(dy, 2) if dy else None,
+        "ss": ss, "roe": roe, "fsr": fsr, "dy": dy, "rev_g": rev_g,
+        "profit_ratio": profit_ratio, "rev_eok": rev_eok, "n_years": len(recent),
     }
 
 
+def _pick(items, key, reason_fn, tag_fn):
+    out = []
+    for s in sorted(items, key=key, reverse=True)[:PER_CAT]:
+        out.append({
+            "code": s["code"], "name": s["name"], "sector": s.get("sector"),
+            "reason": reason_fn(s), "tags": tag_fn(s),
+        })
+    return out
+
+
 def build() -> dict:
-    scored = []
+    rows = []
     for w in WATCHLIST:
         d = _load(w["code"])
         if not d:
             continue
-        ev = _evaluate(d)
-        if not ev:
+        m = _extract(d)
+        if not m:
             continue
-        scored.append({
-            "code": w["code"],
-            "name": d.get("name") or w.get("name"),
-            "sector": d.get("sector") or w.get("sector"),
-            **ev,
-        })
-    scored.sort(key=lambda x: x["score"], reverse=True)
+        rows.append({"code": w["code"], "name": d.get("name") or w.get("name"),
+                     "sector": d.get("sector") or w.get("sector"), **m})
 
-    # 업종당 최대 PER_SECTOR개로 다양화하며 상위 MAX_PICKS개 선정
-    picks, per_sector = [], {}
-    for s in scored:
-        sec = s.get("sector") or "기타"
-        if per_sector.get(sec, 0) >= PER_SECTOR:
-            continue
-        picks.append(s)
-        per_sector[sec] = per_sector.get(sec, 0) + 1
-        if len(picks) >= MAX_PICKS:
-            break
+    # 대형주 — 매출(규모) 큰 순
+    large = _pick(
+        [s for s in rows if s["ss"] and s["ss"] >= MIN_STABILITY],
+        key=lambda s: s["rev_eok"],
+        reason_fn=lambda s: f"국내 대표급 규모 · {'빚 적고 재무 탄탄' if s['ss'] >= 4 else '흑자 안정'}",
+        tag_fn=lambda s: ["대형"] + (["재무탄탄"] if s["ss"] >= 4 else []),
+    )
+    # 고배당주 — 배당수익률 높은 순(2% 이상)
+    dividend = _pick(
+        [s for s in rows if s["dy"] and s["dy"] >= 2.0],
+        key=lambda s: s["dy"],
+        reason_fn=lambda s: f"배당을 약 {s['dy']:.1f}% 줘요 · 흑자",
+        tag_fn=lambda s: [f"배당 {s['dy']:.1f}%"] + (["대형"] if s["rev_eok"] >= 50000 else []),
+    )
+    # 고성장주 — 매출성장률 높은 순(10% 이상)
+    growth = _pick(
+        [s for s in rows if s["rev_g"] is not None and s["rev_g"] >= 10],
+        key=lambda s: s["rev_g"],
+        reason_fn=lambda s: f"매출이 {s['rev_g']:.0f}% 성장 · 흑자",
+        tag_fn=lambda s: [f"매출+{s['rev_g']:.0f}%"] + (["수익성좋음"] if s["roe"] >= 12 else []),
+    )
+    # 꾸준한 흑자주 — 최근 연속 흑자 + 재무 탄탄, 안정성·F-Score 순
+    steady = _pick(
+        [s for s in rows if s["profit_ratio"] >= 0.99 and s["n_years"] >= 2 and s["ss"] and s["ss"] >= 3.5],
+        key=lambda s: (s["ss"] or 0) * 0.6 + (s["fsr"] if s["fsr"] is not None else 0.5) * 0.4,
+        reason_fn=lambda s: f"최근 {s['n_years']}년 연속 흑자 · 빚 적고 재무 탄탄",
+        tag_fn=lambda s: ["꾸준한흑자", "재무탄탄"],
+    )
+
+    categories = [
+        {"key": "large", "title": "대형주", "desc": "규모가 큰 대표 우량회사예요. 대체로 가장 안정적이에요.", "picks": large},
+        {"key": "dividend", "title": "고배당주", "desc": "배당(가진 것만으로 받는 현금)을 많이 주는 회사예요.", "picks": dividend},
+        {"key": "growth", "title": "고성장주", "desc": "매출이 빠르게 크는 회사예요. 기대가 큰 만큼 주가 변동도 클 수 있어요.", "picks": growth},
+        {"key": "steady", "title": "꾸준한 흑자주", "desc": "매년 안정적으로 이익을 내는 회사예요.", "picks": steady},
+    ]
 
     return {
         "status": "ok",
         "generated_at": datetime.now(KST).isoformat(timespec="seconds"),
-        "count": len(picks),
-        "note": "워치리스트(대형주) 중 흑자·재무탄탄·배당을 점수화한 초보자 참고 목록. 매수 권유 아님.",
-        "picks": picks,
+        "note": "워치리스트(대형주) 중 흑자·무경고 종목을 성향별로 나눈 초보자 참고 목록. 매수 권유 아님.",
+        "categories": categories,
     }
 
 
 def main() -> None:
     result = build()
     OUT_PATH.write_text(json.dumps(result, ensure_ascii=False), encoding="utf-8")
-    print(f"[beginner] 완료: 안심 종목 {result['count']}개 → {OUT_PATH.name}")
+    counts = " / ".join(f"{c['title']} {len(c['picks'])}" for c in result["categories"])
+    print(f"[beginner] 완료: {counts} → {OUT_PATH.name}")
 
 
 if __name__ == "__main__":

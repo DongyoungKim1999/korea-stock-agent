@@ -106,7 +106,15 @@ body {
 }
 .v-caution b { color: var(--ink); }
 
-/* ---------- 안심 리스트 ---------- */
+/* ---------- 성향별 추천 (탭) ---------- */
+.cat-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.cat-tabs button {
+  padding: 9px 15px; font-size: 14px; font-weight: 700; font-family: var(--font); cursor: pointer;
+  background: #fbfcfe; color: var(--ink-soft); border: 1.5px solid var(--line); border-radius: 999px;
+  transition: background .12s, color .12s, border-color .12s;
+}
+.cat-tabs button.active { background: var(--brand); border-color: var(--brand); color: #fff; }
+.cat-desc { color: var(--ink-soft); font-size: 14px; margin: 0 0 14px; line-height: 1.5; }
 .picks { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .picks-loading { color: var(--muted); grid-column: 1 / -1; padding: 10px 2px; }
 .pick {

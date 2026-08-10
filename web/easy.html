@@ -26,16 +26,15 @@
         <div id="q-results" class="q-results" hidden></div>
       </div>
       <div id="verdict" class="verdict" hidden></div>
-      <div id="verdict-empty" class="verdict-empty">위에서 회사를 검색하거나, 아래 <b>안심 리스트</b>에서 하나 눌러보세요.</div>
+      <div id="verdict-empty" class="verdict-empty">위에서 회사를 검색하거나, 아래 <b>성향별 추천</b>에서 하나 눌러보세요.</div>
     </section>
 
-    <!-- 2. 초보자 안심 리스트 -->
+    <!-- 2. 성향별 추천 -->
     <section class="card">
-      <h2>초보자가 봐도 안심인 큰 회사들</h2>
-      <p class="muted">
-        크고(대형) · 꾸준히 흑자이고 · 빚이 적은 우량 회사만 자동으로 추린 <b>참고 목록</b>이에요.
-        (여기 있다고 무조건 오르는 건 아니에요.)
-      </p>
+      <h2>이렇게 골라보세요</h2>
+      <p class="muted">투자 성향에 맞춰 우량회사를 나눠 담았어요. 흑자 회사만 골랐어요.</p>
+      <div class="cat-tabs" id="cat-tabs"></div>
+      <p class="cat-desc" id="cat-desc"></p>
       <div id="picks" class="picks">
         <div class="picks-loading">불러오는 중…</div>
       </div>
