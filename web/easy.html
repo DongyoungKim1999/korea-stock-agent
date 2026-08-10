@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>쉬운 주식 도우미 — 초보자용</title>
+  <title>쉬운 버전</title>
   <meta name="description" content="초보자를 위한 쉬운 주식 참고 도우미 — 회사가 얼마나 튼튼한지 신호등으로 한눈에.">
   <link rel="stylesheet" href="css/easy.css">
 </head>
@@ -11,18 +11,9 @@
   <header class="hd">
     <div class="hd-in">
       <div class="hd-nav"><a class="hd-expert" href="index.html">전문가용 대시보드 →</a></div>
-      <h1>🌱 쉬운 주식 도우미</h1>
-      <p class="hd-sub">회사가 얼마나 <b>튼튼한지</b> 쉬운 말로 알려드려요. 어려운 용어는 뺐어요.</p>
+      <h1>쉬운 버전</h1>
     </div>
   </header>
-
-  <div class="safety" role="note">
-    <div class="safety-ic">⚠️</div>
-    <div>
-      <b>이건 '사라·팔라'는 조언이 아니에요.</b> 회사가 튼튼한지 쉽게 보여주는 <b>참고 정보</b>일 뿐이에요.
-      주식은 오르내리며 <b>원금을 잃을 수도</b> 있어요. 최종 결정과 책임은 본인에게 있어요.
-    </div>
-  </div>
 
   <main class="wrap">
     <!-- 1. 검색 → 신호등 결론 -->
@@ -49,13 +40,22 @@
         <div class="picks-loading">불러오는 중…</div>
       </div>
     </section>
-  </main>
 
-  <footer class="ft">
-    <p><b>다시 한 번</b> — 이 도우미는 투자 참고 정보이며 투자자문·매매권유가 아니에요.
-       실제 투자 판단과 그 결과에 대한 책임은 이용자 본인에게 있어요. 시세는 네이버 포털 기준이며 실시간이 아닐 수 있어요.</p>
-    <p class="ft-small">데이터: DART 공시 재무 + 네이버 포털 시세. 하루 2회 자동 갱신.</p>
-  </footer>
+    <!-- 3. 무엇이든 물어보기 (GPT) -->
+    <section class="card">
+      <h2>무엇이든 물어보세요</h2>
+      <p class="muted">궁금한 회사나 어려운 주식 용어를 편하게 물어보면 쉽게 답해드려요.</p>
+      <div class="chat">
+        <div class="chat-log" id="chat-log">
+          <div class="chat-empty" id="chat-empty">예) "삼성전자 지금 사도 돼?" · "PER이 뭐야?" · "이 회사 빚 많아?"</div>
+        </div>
+        <div class="chat-input-row">
+          <input id="chat-input" type="text" inputmode="text" autocomplete="off" placeholder="궁금한 걸 입력하세요">
+          <button id="chat-send" type="button">보내기</button>
+        </div>
+      </div>
+    </section>
+  </main>
 
   <script src="js/config.js"></script>
   <script src="js/easy.js"></script>

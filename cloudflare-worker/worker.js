@@ -297,6 +297,11 @@ export default {
       ? `\n\n[현재 보고 있는 종목 데이터]\n${JSON.stringify(payload.stockContext).slice(0, 1500)}`
       : "";
 
+    // '쉬운 버전' 페이지의 초보자 모드 — 전문용어를 피하고 아주 쉽게 짧게 답하도록 지시 추가
+    const easyAddon = payload.mode === "easy"
+      ? "\n\n[매우 중요] 이 사용자는 주식 완전 초보자입니다. 전문용어(PER·ROE·밸류에이션 등)는 꼭 써야 하면 한마디로 쉽게 풀어주고, 어려운 말 없이 친근한 일상어로 3~4문장 이내로 짧고 쉽게 답하세요. 겁주지 말고 차분하게 설명하세요."
+      : "";
+
     const openaiRes = await fetch(OPENAI_ENDPOINT, {
       method: "POST",
       headers: {
@@ -308,7 +313,7 @@ export default {
         max_tokens: MAX_TOKENS,
         temperature: 0.4,
         messages: [
-          { role: "system", content: SYSTEM_PROMPT + contextLine },
+          { role: "system", content: SYSTEM_PROMPT + easyAddon + contextLine },
           ...userMessages.map((m) => ({ role: m.role === "assistant" ? "assistant" : "user", content: m.content })),
         ],
       }),

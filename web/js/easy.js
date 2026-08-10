@@ -1,7 +1,8 @@
 /* 쉬운 주식 도우미 (초보자용) — 기존 대시보드 데이터를 재활용해 '신호등 한 줄 결론'으로 보여준다.
    판정은 '회사가 얼마나 튼튼한가'(안전성)일 뿐, 매수 신호가 아니다. 전문용어는 쉬운 말로 번역한다. */
 
-const state = { companies: [], picks: [], fundCache: {}, curCode: null };
+const state = { companies: [], picks: [], fundCache: {}, curCode: null, lastQuote: null };
+const chatHistory = [];
 
 async function loadJSON(path) {
   const res = await fetch(path, { cache: "no-store" });
@@ -150,6 +151,7 @@ async function selectStock(code, name) {
   }
   const quote = await fetchQuote(code);
   if (state.curCode !== code) return;
+  state.lastQuote = quote;
   renderVerdict(code, name || (quote && quote.name) || fund.name || code, fund, quote);
   window.scrollTo({ top: document.querySelector(".wrap").offsetTop - 8, behavior: "smooth" });
 }
@@ -188,8 +190,83 @@ function renderPicks() {
     b.addEventListener("click", () => selectStock(b.dataset.code, b.dataset.name)));
 }
 
+/* ---------------- 무엇이든 물어보기 (GPT) ---------------- */
+function _chatConfigured() {
+  return typeof GPT_WORKER_URL === "string" && GPT_WORKER_URL.trim().length > 0;
+}
+
+function appendChat(role, text, extra) {
+  const log = document.getElementById("chat-log");
+  const empty = document.getElementById("chat-empty");
+  if (empty) empty.remove();
+  const d = document.createElement("div");
+  d.className = `cmsg ${role}${extra ? " " + extra : ""}`;
+  d.textContent = text;
+  log.appendChild(d);
+  log.scrollTop = log.scrollHeight;
+  return d;
+}
+
+// 현재 보고 있는 종목의 쉬운 맥락(있으면) — GPT가 "이 회사 어때?"에 맞춰 답하도록
+function easyStockContext() {
+  const code = state.curCode;
+  const fund = code ? state.fundCache[code] : null;
+  const q = state.lastQuote;
+  const ok = fund && fund.status === "ok";
+  if (!ok && !q) return null;
+  const roe = ok && fund.quality ? fund.quality.roe_pct : null;
+  return {
+    회사: (q && q.name) || (ok && fund.name) || code,
+    현재가: q ? q.price : null,
+    등락률_pct: q ? q.change_pct : null,
+    재무안정성_5점만점: ok ? fund.stability_score : null,
+    수익성_ROE_pct: roe,
+    흑자여부: roe != null ? (roe > 0 ? "흑자" : "적자") : null,
+    PER: q && q.per ? q.per : (ok && fund.valuation ? fund.valuation.per : null),
+    배당수익률: q && q.dividend_yield ? q.dividend_yield : null,
+  };
+}
+
+async function sendChat() {
+  const input = document.getElementById("chat-input");
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = "";
+  appendChat("user", text);
+  chatHistory.push({ role: "user", content: text.slice(0, 1900) });
+  if (!_chatConfigured()) {
+    appendChat("assistant", "지금은 채팅이 연결돼 있지 않아요. 잠시 후 다시 시도해 주세요.", "err");
+    return;
+  }
+  const pending = appendChat("assistant", "생각 중…", "pending");
+  try {
+    const res = await fetch(GPT_WORKER_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages: chatHistory.slice(-12), stockContext: easyStockContext(), mode: "easy" }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error((data && data.error) || "요청 실패");
+    pending.textContent = data.reply;
+    pending.className = "cmsg assistant";
+    chatHistory.push({ role: "assistant", content: data.reply });
+  } catch (e) {
+    pending.textContent = "연결에 실패했어요. 잠시 후 다시 시도해 주세요.";
+    pending.className = "cmsg assistant err";
+  }
+}
+
+function wireChat() {
+  const send = document.getElementById("chat-send");
+  const input = document.getElementById("chat-input");
+  if (!send || !input) return;
+  send.addEventListener("click", sendChat);
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter") sendChat(); });
+}
+
 /* ---------------- 시작 ---------------- */
 async function init() {
+  wireChat();
   const input = document.getElementById("q");
   input.addEventListener("input", () => runSearch(input.value));
   input.addEventListener("focus", () => { if (input.value.trim()) runSearch(input.value); });
