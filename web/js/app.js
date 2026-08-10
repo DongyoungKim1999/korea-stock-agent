@@ -1631,6 +1631,15 @@ async function init() {
   wireModal();
   wireValuationCalc();
 
+  // 딥링크: ?range=(거래일 수, 예 1250=5년)로 초기 차트 기간 설정
+  const urlRange = parseInt(new URLSearchParams(location.search).get("range"), 10);
+  const rangeBtn = urlRange && document.querySelector(`#range-tabs button[data-range="${urlRange}"]`);
+  if (rangeBtn) {
+    document.querySelectorAll("#range-tabs button").forEach((b) => b.classList.remove("active"));
+    rangeBtn.classList.add("active");
+    state.currentRange = urlRange;
+  }
+
   // 딥링크: URL의 ?code=가 있으면 그 종목을, 없으면 워치리스트 첫 종목을 연다
   const urlCode = new URLSearchParams(location.search).get("code");
   if (urlCode && /^\d{6}$/.test(urlCode)) {
