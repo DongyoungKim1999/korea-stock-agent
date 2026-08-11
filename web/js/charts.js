@@ -111,7 +111,7 @@ function renderPriceChart(containerEl, rows, levels, patterns) {
     candleSeries.setMarkers(patterns.map(p => ({
       time: p.date,
       position: p.type === "buy" ? "belowBar" : "aboveBar",
-      color: p.type === "buy" ? PALETTE.good : PALETTE.critical,
+      color: p.type === "buy" ? PALETTE.good : PALETTE.warning,
       shape: p.type === "buy" ? "arrowUp" : "arrowDown",
       text: "",
     })));
@@ -129,7 +129,7 @@ function renderPriceChart(containerEl, rows, levels, patterns) {
       const p = byTime[_timeToStr(param.time)];
       if (!p) { tip.style.display = "none"; return; }
       const buy = p.type === "buy";
-      const col = buy ? PALETTE.good : PALETTE.critical;
+      const col = buy ? PALETTE.good : PALETTE.warning;
       tip.innerHTML =
         `<div class="pt-name" style="color:${col}">${buy ? "▲" : "▼"} ${p.name}</div>` +
         `<div class="pt-sig">${buy ? "매수 신호 · 상승 반전" : "매도 신호 · 하락 반전"}</div>` +
@@ -146,13 +146,14 @@ function renderPriceChart(containerEl, rows, levels, patterns) {
     });
   }
 
-  // 지지/저항 수평선 — 양봉·음봉 색(빨강·파랑)과 겹치지 않게 저항=초록, 지지=노랑으로 구분.
+  // 지지/저항 수평선 — 양봉·음봉 색(빨강·파랑)과 겹치지 않게 지지=초록, 저항=노랑으로 구분.
+  // (선과 축 라벨이 같은 색으로 표시됨)
   if (levels) {
     if (levels.resistance != null) {
-      candleSeries.createPriceLine({ price: levels.resistance, color: PALETTE.good, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true, title: "저항" });
+      candleSeries.createPriceLine({ price: levels.resistance, color: PALETTE.warning, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true, title: "저항" });
     }
     if (levels.support != null) {
-      candleSeries.createPriceLine({ price: levels.support, color: PALETTE.warning, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true, title: "지지" });
+      candleSeries.createPriceLine({ price: levels.support, color: PALETTE.good, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true, title: "지지" });
     }
   }
 

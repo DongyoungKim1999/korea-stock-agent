@@ -257,7 +257,7 @@ html, body {
 /* 캔들 패턴 범례 + 마우스오버 상세 툴팁 */
 .pattern-legend { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; font-size: 11px; color: var(--text-muted); margin: 6px 0 2px; }
 .pattern-legend .pl-buy { color: var(--good); font-weight: 600; }
-.pattern-legend .pl-sell { color: var(--critical); font-weight: 600; }
+.pattern-legend .pl-sell { color: var(--warning); font-weight: 600; }
 .pattern-legend .pl-hint { color: var(--text-muted); }
 .pattern-tip {
   position: absolute; z-index: 30; pointer-events: none; min-width: 150px; max-width: 210px;
