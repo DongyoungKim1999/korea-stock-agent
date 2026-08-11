@@ -68,6 +68,7 @@ jobs:
         # 정기 스케줄/수동 실행은 항상 재생성. push 트리거는 데이터 생성 로직(automation/common/skills)이
         # 바뀐 경우에만 재생성한다 — web/*.html, css, js 같은 순수 UI 변경까지 매번 DART·pykrx를
         # 전종목 재조회하면 커밋 하나에 15~30분씩 걸려 낭비가 크다(실측으로 확인됨).
+        id: generate
         if: github.event_name != 'push' || steps.filter.outputs.data_logic == 'true'
         env:
           DART_API_KEY: ${{ secrets.DART_API_KEY }}
@@ -77,6 +78,7 @@ jobs:
         # 일부 종목/스캔 실패는 generate_all.py 내부에서 스킵+로그 처리되어 여기서 중단되지 않는다.
         # 전 단계가 실패했을 때만 이 스텝이 실패로 표시된다(automation/generate_all.py 참조) —
         # 그 경우에도 아래 커밋/배포는 계속 진행해 직전 성공분(git에 남아있는 web/data)이 계속 서빙되게 한다.
+        # (실패 자체는 조용히 넘기지 않음 — 다음 스텝이 Step Summary에 경고를 남긴다.)
         continue-on-error: true
 
       - name: 생성 결과 확인
@@ -85,6 +87,11 @@ jobs:
         run: |
           if [ "$DATA_REGENERATED" != "true" ]; then
             echo "UI 전용 변경이라 데이터 재생성을 건너뛰었습니다 — 기존 web/data 그대로 배포합니다."
+          fi
+          if [ "${{ steps.generate.outcome }}" = "failure" ]; then
+            echo "### ⚠️ 데이터 생성 전면 실패" >> "$GITHUB_STEP_SUMMARY"
+            echo "generate_all.py의 모든 단계가 실패했습니다. 직전 성공분으로 계속 배포하지만," >> "$GITHUB_STEP_SUMMARY"
+            echo "DART/네이버 API 장애나 키 만료가 원인일 수 있으니 로그를 확인해주세요." >> "$GITHUB_STEP_SUMMARY"
           fi
           echo "=== web/data 내용 ==="
           find web/data -type f | sort
@@ -102,19 +109,31 @@ jobs:
             # 재생성 실행 중(수십 분) 코드 커밋 등으로 main이 이동하면 단순 push가 거부돼 재계산분이
             # 통째로 유실됐다(커밋 스텝 실패→배포 skip). 데이터 커밋은 web/data만 건드리고 코드 커밋과
             # 경로가 겹치지 않으므로 rebase 후 재시도하면 안전하게 반영된다.
+            pushed=""
             for i in 1 2 3 4 5; do
-              if git push; then break; fi
+              if git push; then pushed=1; break; fi
               echo "push 거부됨 — 원격 변경 rebase 후 재시도 ($i/5)"
-              git pull --rebase origin main || exit 1
+              git pull --rebase origin main || break
               sleep $((i * 3))
             done
+            # 5회 재시도 후에도 실패하면 이번 실행의 재계산 결과는 원격에 반영되지 못한 것 —
+            # 조용히 다음 스텝(배포)으로 넘어가면 아무 신호 없이 유실되므로 스텝을 실패로 표시한다.
+            # (아래 배포 스텝들은 if: always()라 이 실패와 무관하게 방금 만든 web/data로 계속 배포된다.)
+            if [ -z "$pushed" ]; then
+              echo "### ⚠️ 데이터 커밋 push 실패" >> "$GITHUB_STEP_SUMMARY"
+              echo "5회 재시도 후에도 원격에 반영하지 못했습니다. 이번 실행의 재계산분은 다음 실행 전까지" >> "$GITHUB_STEP_SUMMARY"
+              echo "git에 저장되지 않습니다(사이트 자체는 이번 결과로 정상 배포됩니다)." >> "$GITHUB_STEP_SUMMARY"
+              exit 1
+            fi
           fi
 
       - name: Pages 아티팩트 업로드
+        if: always()
         uses: actions/upload-pages-artifact@v3
         with:
           path: web
 
       - name: GitHub Pages 배포
+        if: always()
         id: deployment
         uses: actions/deploy-pages@v4

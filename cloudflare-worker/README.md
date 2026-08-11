@@ -45,7 +45,10 @@ URL이 출력된다 — 이 주소를 복사해둔다.
 
 이 Worker의 URL이 공개되면(브라우저 네트워크 탭 등으로 알아낼 수 있음) 이론적으로 누군가
 직접 호출해서 당신의 OpenAI 크레딧을 소모시킬 수 있다. 코드 쪽에서 메시지 길이·대화 턴 수를
-제한해두었지만, **최종 방어선은 OpenAI 계정 자체의 지출 한도**다:
+제한하고, `wrangler.toml`의 `RATE_LIMITER_CHAT`(IP당 분당 20회) / `RATE_LIMITER_QUOTE`(IP당
+분당 60회) 바인딩으로 IP당 요청 빈도 자체를 막아두었다 — 별도 설정 없이 `wrangler deploy` 시
+자동 적용된다. 다만 이것도 IP 우회(여러 IP로 분산 호출 등)까지 막지는 못하므로, **최종
+방어선은 OpenAI 계정 자체의 지출 한도**다:
 
 1. platform.openai.com → Settings → **Billing** → **Limits**
 2. **Hard limit**(월 최대 지출)을 감당 가능한 금액(예: $5~10)으로 설정

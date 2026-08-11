@@ -4,3 +4,18 @@ compatibility_date = "2024-09-01"
 
 # OPENAI_API_KEY는 여기 적지 않는다 — 반드시 아래 명령으로 Secret으로만 등록:
 #   wrangler secret put OPENAI_API_KEY
+
+# IP별 요청 빈도 제한 (Cloudflare 네이티브 Rate Limiting API — 별도 KV/Durable Object 생성 불필요).
+# Worker URL만 알면 인증 없이 무제한 호출 가능해 OpenAI 크레딧이 소진될 수 있는 문제를 막는다.
+# namespace_id는 이 계정 안에서 리미터를 구분하는 임의의 숫자일 뿐, 사전에 별도로 만들 필요 없다.
+[[unsafe.bindings]]
+name = "RATE_LIMITER_CHAT"
+type = "ratelimit"
+namespace_id = "1001"
+simple = { limit = 20, period = 60 } # OpenAI 호출(/, /analyze) — IP당 분당 20회
+
+[[unsafe.bindings]]
+name = "RATE_LIMITER_QUOTE"
+type = "ratelimit"
+namespace_id = "1002"
+simple = { limit = 60, period = 60 } # 네이버 프록시(/quote, /ohlcv, /finance) — IP당 분당 60회

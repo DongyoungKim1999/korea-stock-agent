@@ -150,12 +150,12 @@ async function fillPreview(code, span) {
   const li = span.closest(".result-item");
   if (li && li.dataset.direct && q.name) {
     const t = li.querySelector(".r-title");
-    if (t) t.innerHTML = `${q.name} <span style="color:var(--text-muted);font-weight:400">${code}</span>`;
+    if (t) t.innerHTML = `${_esc(q.name)} <span style="color:var(--text-muted);font-weight:400">${code}</span>`;
   }
   const up = q.change_pct > 0, down = q.change_pct < 0;
   const c = up ? "var(--candle-up)" : down ? "var(--candle-down)" : "var(--text-muted)";
   const arr = up ? "▲" : down ? "▼" : "–";
-  const cap = q.market_cap_text ? `<span class="r-cap">${q.market_cap_text}</span>` : "";
+  const cap = q.market_cap_text ? `<span class="r-cap">${_esc(q.market_cap_text)}</span>` : "";
   span.innerHTML = `${Math.round(q.price).toLocaleString("ko-KR")} <span style="color:${c}">${arr}${Math.abs(q.change_pct ?? 0).toFixed(1)}%</span>${cap}`;
 }
 
@@ -808,10 +808,10 @@ function renderFilingInsight(code) {
   const rf = r.redflags || "";
   const rfNone = rf.length < 15 && /특이사항\s*없음|없음|없습니다/.test(rf);
   const rows = [];
-  if (r.guidance) rows.push(`<div class="fi-row"><span class="fi-k">📈 가이던스</span><span>${r.guidance}</span></div>`);
-  if (tone) rows.push(`<div class="fi-row"><span class="fi-k">🗣 경영진 톤</span><span style="color:${toneColor}">${tone}</span></div>`);
-  if (rf) rows.push(`<div class="fi-row"><span class="fi-k">${rfNone ? "✅" : "⚠️"} 레드플래그</span><span style="color:${rfNone ? "var(--text-secondary)" : "var(--critical)"}">${rf}</span></div>`);
-  el.innerHTML = `<div class="fi-head">📄 공시 인사이트 <span class="fi-src">${r.report_nm || ""} · AI 요약</span></div>${rows.join("")}`;
+  if (r.guidance) rows.push(`<div class="fi-row"><span class="fi-k">📈 가이던스</span><span>${_esc(r.guidance)}</span></div>`);
+  if (tone) rows.push(`<div class="fi-row"><span class="fi-k">🗣 경영진 톤</span><span style="color:${toneColor}">${_esc(tone)}</span></div>`);
+  if (rf) rows.push(`<div class="fi-row"><span class="fi-k">${rfNone ? "✅" : "⚠️"} 레드플래그</span><span style="color:${rfNone ? "var(--text-secondary)" : "var(--critical)"}">${_esc(rf)}</span></div>`);
+  el.innerHTML = `<div class="fi-head">📄 공시 인사이트 <span class="fi-src">${_esc(r.report_nm || "")} · AI 요약</span></div>${rows.join("")}`;
 }
 
 function _esc(s) {
@@ -1517,15 +1517,19 @@ async function loadOnDemandTechnical(code) {
 // 재무 기본적분석은 전종목 pre-generated(업종평균) — 어떤 코드든 fundamental JSON을 로드한다.
 // 없으면(ETF·우선주 등 DART 미등록) 미지원 안내.
 async function loadFundamental(code) {
+  let fund;
   try {
     if (!state.fundCache[code]) state.fundCache[code] = await loadJSON(`data/fundamental/${code}.json`);
-    renderFundamental(state.fundCache[code]);
+    fund = state.fundCache[code];
   } catch (e) {
-    renderFundamental({ status: "unsupported" });
+    fund = { status: "unsupported" }; // 캐시에는 남기지 않음 — 다음 호출에서 재시도 가능
   }
+  if (state.currentCode !== code) return; // 그 사이 다른 종목으로 전환됐으면 화면을 덮어쓰지 않음
+  renderFundamental(fund);
   renderFactorProfile(code); // 전종목 횡단면 팩터 랭킹 프로파일
   renderFilingInsight(code); // LLM 공시 인사이트(가이던스·톤·레드플래그)
-  if (state.currentCode === code) { renderSummaryStrip(code); autofillValuation(code); } // 재무 태그 + 계산기 주식수 자동채움
+  renderSummaryStrip(code);
+  autofillValuation(code); // 재무 태그 + 계산기 주식수 자동채움
 }
 
 async function selectStock(code) {

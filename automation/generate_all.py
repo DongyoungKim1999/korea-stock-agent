@@ -40,12 +40,6 @@ def main() -> None:
     import generate_beginner_picks
     import generate_attention
 
-    # generate_attention(주목종목 스캔)은 웹 대시보드 UI에서 뺐으므로(2026-07 개편) 더 이상
-    # 호출하지 않는다 — 전종목 스캔은 시간이 오래 걸리고 KRX 차단으로 자주 실패했었다.
-    # 스크립트 자체는 그대로 남아있어 필요하면 아래 줄만 다시 추가하면 된다:
-    #   import generate_attention
-    #   "attention": run_step("주목종목 스캔 생성", generate_attention.main),
-
     # company_index(유니버스) → technical(워치리스트, 밸류에이션용 종가) → fundamental_all(전종목) 순서.
     # generate_fundamental_all이 전 상장종목을 업종평균 방식으로 채운다(워치리스트 120은 배당·추이까지).
     # 예전 generate_fundamental.py(120 피어방식)는 남겨두되 파이프라인에서는 _all로 대체.

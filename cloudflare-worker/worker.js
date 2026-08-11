@@ -3,8 +3,9 @@
  *
  * OPENAI_API_KEY는 이 Worker의 환경변수(Secret)로만 존재하고 브라우저로는 절대 내려가지 않는다.
  * 대시보드 JS는 이 Worker의 URL만 알고 있으면 되고, 그 URL이 공개되어도 키 자체는 노출되지 않는다
- * (다만 이 Worker를 다른 사람이 직접 호출해 당신의 OpenAI 크레딧을 쓸 수는 있으니, OpenAI 대시보드에서
- * 반드시 월 지출 한도(Hard limit)를 걸어두는 걸 권장한다 — README 참고).
+ * (다만 이 Worker를 다른 사람이 직접 호출해 당신의 OpenAI 크레딧을 쓸 수는 있으니, wrangler.toml의
+ * RATE_LIMITER_CHAT/RATE_LIMITER_QUOTE 바인딩으로 IP당 요청 빈도를 1차 제한하고, OpenAI 대시보드에서도
+ * 월 지출 한도(Hard limit)를 걸어두는 걸 권장한다 — README 참고).
  *
  * 배포: wrangler.toml README 참고. wrangler secret put OPENAI_API_KEY 로 키 등록.
  */
@@ -50,6 +51,24 @@ function jsonResponse(body, status, origin) {
     status,
     headers: { "Content-Type": "application/json", ...corsHeaders(origin) },
   });
+}
+
+function clientIp(request) {
+  return request.headers.get("CF-Connecting-IP") || "unknown";
+}
+
+// Worker URL만 알면 인증 없이 반복 호출할 수 있는 문제(OpenAI 과금 폭탄, 네이버 프록시 남용) 방어.
+// wrangler.toml의 RATE_LIMITER_* 바인딩이 로컬 dev 등 환경에 없을 수도 있으니 그럴 땐 그냥 통과시킨다
+// (fail-open — 리미터 부재로 서비스 전체가 죽는 것보단 낫다).
+async function checkRateLimit(env, limiterName, request) {
+  const limiter = env[limiterName];
+  if (!limiter) return true;
+  try {
+    const { success } = await limiter.limit({ key: clientIp(request) });
+    return success;
+  } catch (e) {
+    return true;
+  }
 }
 
 // "239,500" 같은 문자열 → 239500 (콤마 제거). 실패 시 null.
@@ -221,6 +240,14 @@ export default {
       return new Response(null, { status: 204, headers: corsHeaders(origin) });
     }
 
+    // GET /quote, /ohlcv, /finance — 무료 프록시지만 무제한 스크레이핑 시 네이버 쪽에서 이 Worker의
+    // 아웃바운드 IP를 통째로 차단할 수 있어 전체 사용자에게 영향을 줄 수 있다 → IP당 분당 60회 제한.
+    if (request.method === "GET" && (path.endsWith("/quote") || path.endsWith("/ohlcv") || path.endsWith("/finance"))) {
+      if (!(await checkRateLimit(env, "RATE_LIMITER_QUOTE", request))) {
+        return jsonResponse({ error: "요청이 너무 많습니다. 잠시 후 다시 시도해주세요." }, 429, origin);
+      }
+    }
+
     // GET /quote?code=XXXXXX — 라이브 시세/시총/컨센서스 (인증 불필요, 공개 포털 데이터)
     if (request.method === "GET" && path.endsWith("/quote")) {
       return handleQuote(url.searchParams.get("code"), origin);
@@ -239,6 +266,9 @@ export default {
     if (request.method === "POST" && path.endsWith("/analyze")) {
       if (!env.OPENAI_API_KEY) {
         return jsonResponse({ error: "OPENAI_API_KEY 미설정" }, 500, origin);
+      }
+      if (!(await checkRateLimit(env, "RATE_LIMITER_CHAT", request))) {
+        return jsonResponse({ error: "요청이 너무 많습니다. 잠시 후 다시 시도해주세요." }, 429, origin);
       }
       let p;
       try { p = await request.json(); } catch { return jsonResponse({ error: "잘못된 JSON" }, 400, origin); }
@@ -271,6 +301,9 @@ export default {
     }
     if (!env.OPENAI_API_KEY) {
       return jsonResponse({ error: "서버에 OPENAI_API_KEY가 설정되지 않았습니다 (wrangler secret put OPENAI_API_KEY)" }, 500, origin);
+    }
+    if (!(await checkRateLimit(env, "RATE_LIMITER_CHAT", request))) {
+      return jsonResponse({ error: "요청이 너무 많습니다. 잠시 후 다시 시도해주세요." }, 429, origin);
     }
 
     let payload;
