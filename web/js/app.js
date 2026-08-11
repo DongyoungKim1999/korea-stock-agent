@@ -66,6 +66,7 @@ function wireModal() {
 
 function renderFreshness() {
   const bar = document.getElementById("freshness-bar");
+  if (!bar) return;
   if (!state.meta) {
     bar.textContent = "아직 자동 데이터가 생성되지 않았습니다 — GitHub Actions 워크플로우가 최소 1회 실행되어야 합니다.";
     return;
@@ -207,31 +208,46 @@ function scoreBadge(score) {
 }
 
 function displayIndicatorScore(kind, ind) {
-  // 표/레이더 표시 전용 0~5 매핑(참고용) — 실제 채점은 automation/deterministic_scoring.py.
-  const clamp5 = (v) => Math.max(0, Math.min(5, v));
+  // 표/레이더 표시용 1~5 매핑. 종목 간 변별력을 위해 이산 버킷(예전엔 MA가 4.3/3.0/1.7 세 값뿐이라
+  // 대부분 3.0에 뭉쳤다) 대신, 실제 지표값 크기에 비례하는 '연속·민감' 점수를 쓴다. (참고용 표시 점수)
+  const clamp5 = (v) => Math.max(1, Math.min(5, v));
+  const cl = (v, a, b) => Math.max(a, Math.min(b, v));
+  const px = ind.latest_close || null;
   switch (kind) {
     case "ma": {
-      const m = { bullish: 4.3, mixed: 3.0, bearish: 1.7, insufficient_data: 2.5 }[ind.moving_averages.alignment];
-      return clamp5(m);
+      const m = ind.moving_averages || {};
+      const a = m.ma5 && m.ma5.latest, b = m.ma20 && m.ma20.latest, c = m.ma60 && m.ma60.latest;
+      if (!a || !b || !c || !px) return ({ bullish: 4.3, mixed: 3.0, bearish: 1.7 }[m.alignment]) || 2.5;
+      const spread = ((a - c) / c) * 100;  // 단기-장기 이격(%) — 추세의 방향·강도
+      const pos = ((px - b) / b) * 100;     // 현재가의 20일선 대비 위치(%)
+      return clamp5(3 + cl(spread * 0.6 + pos * 0.4, -8, 8) / 4);
     }
     case "macd": {
-      let v = 3.0 + (ind.macd.above_zero ? 0.8 : -0.8);
-      const c = ind.macd.signal_cross_recent;
-      if (c.occurred && c.days_ago <= 5) v += c.direction === "golden" ? 0.9 : -0.9;
+      const md = ind.macd || {};
+      if (md.macd_latest == null || !px) return 2.5;
+      const line = (md.macd_latest / px) * 100;                 // MACD선의 주가 대비 위치(%)
+      const hist = ((md.histogram_latest || 0) / px) * 100;     // 히스토그램(모멘텀) 강도(%)
+      let v = 3 + cl(line * 3, -1.3, 1.3) + cl(hist * 10, -1.3, 1.3);
+      const cr = md.signal_cross_recent;
+      if (cr && cr.occurred && cr.days_ago <= 5) v += cr.direction === "golden" ? 0.4 : -0.4;
       return clamp5(v);
     }
     case "rsi":
-      return ind.rsi14.latest == null ? 2.5 : clamp5(3.0 + (ind.rsi14.latest - 50) / 20);
+      // 50 기준 ±12로 1점 변동(예전 ±20보다 민감) — 45 vs 55도 점수 차이가 보이게
+      return ind.rsi14.latest == null ? 2.5 : clamp5(3 + (ind.rsi14.latest - 50) / 12);
     case "bollinger":
-      return ind.bollinger.percent_b == null ? 2.5 : clamp5(3.0 + (ind.bollinger.percent_b - 0.5) * 4);
+      return ind.bollinger.percent_b == null ? 2.5 : clamp5(3 + (ind.bollinger.percent_b - 0.5) * 5);
     case "volume": {
       const r = ind.volume.ratio_to_avg20;
       if (r == null) return 2.5;
-      const bullish = ind.candles.recent.length && ind.candles.recent[ind.candles.recent.length - 1].bullish;
-      return clamp5(3.0 + (r - 1) * (bullish ? 1 : -1));
+      if (ind.volume.abnormally_low) return 2.2;  // 거래 급감은 신뢰도 하향
+      const rc = ind.candles.recent || [];
+      const bullish = rc.length && rc[rc.length - 1].bullish;
+      return clamp5(3 + cl((r - 1) * 1.6, -2, 2) * (bullish ? 1 : -1));
     }
     case "stochastic":
-      return ind.stochastic.k_latest == null ? 2.5 : clamp5(ind.stochastic.k_latest / 20);
+      // %K(0~100)를 1~5로 선형 매핑 (0→1, 50→3, 100→5)
+      return ind.stochastic.k_latest == null ? 2.5 : clamp5(1 + ind.stochastic.k_latest / 25);
     default:
       return 2.5;
   }
@@ -550,6 +566,7 @@ function renderTradeContext(ctx) {
 
 function renderRiskReward(code) {
   const block = document.getElementById("rr-block");
+  if (!block) return;
   const tech = state.techCache[code];
   const q = state.currentQuote;
   const support = tech && tech.status === "ok" && tech.indicators.levels ? tech.indicators.levels.support : null;
