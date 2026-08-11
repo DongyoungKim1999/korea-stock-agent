@@ -83,6 +83,29 @@ function renderPriceChart(containerEl, rows, levels, patterns) {
   });
   candleSeries.setData(rows.map(r => ({ time: r.date, open: r.open, high: r.high, low: r.low, close: r.close })));
 
+  // 종가 우선 호버 범례 — 커서 위치의 '종가'를 크게, 시/고/저를 작게 좌상단에 표시.
+  // (기본 크로스헤어는 종가를 안 보여줘 사용자가 가장 궁금해하는 종가가 안 나오던 문제 해결)
+  containerEl.style.position = "relative";
+  const legend = document.createElement("div");
+  legend.className = "chart-hover-legend";
+  containerEl.appendChild(legend);
+  const _fmt = (v) => Math.round(v).toLocaleString("ko-KR");
+  const showBar = (bar, dateStr) => {
+    if (!bar) { legend.innerHTML = ""; return; }
+    const col = bar.close >= bar.open ? PALETTE.candleUp : PALETTE.candleDown;
+    legend.innerHTML =
+      `<span class="chl-date">${dateStr || ""}</span>` +
+      `<span class="chl-close">종가 <b style="color:${col}">${_fmt(bar.close)}</b></span>` +
+      `<span class="chl-ohlc">시 ${_fmt(bar.open)} · 고 ${_fmt(bar.high)} · 저 ${_fmt(bar.low)}</span>`;
+  };
+  const _lastRow = rows[rows.length - 1];
+  showBar(_lastRow, _lastRow.date);   // 기본값: 최신 봉 종가
+  chart.subscribeCrosshairMove((param) => {
+    const bar = param && param.seriesData ? param.seriesData.get(candleSeries) : null;
+    if (bar && param.time) showBar(bar, _timeToStr(param.time));
+    else showBar(_lastRow, _lastRow.date);
+  });
+
   // 캔들 패턴 매수/매도 마커 + 마우스오버 상세 툴팁 (investing.com 스타일)
   if (patterns && patterns.length) {
     candleSeries.setMarkers(patterns.map(p => ({
@@ -123,13 +146,13 @@ function renderPriceChart(containerEl, rows, levels, patterns) {
     });
   }
 
-  // 지지/저항 수평선 — 진입/이탈 참고. 저항=빨강(상단 벽), 지지=파랑(하단 바닥)
+  // 지지/저항 수평선 — 양봉·음봉 색(빨강·파랑)과 겹치지 않게 저항=초록, 지지=노랑으로 구분.
   if (levels) {
     if (levels.resistance != null) {
-      candleSeries.createPriceLine({ price: levels.resistance, color: PALETTE.candleUp, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true, title: "저항" });
+      candleSeries.createPriceLine({ price: levels.resistance, color: PALETTE.good, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true, title: "저항" });
     }
     if (levels.support != null) {
-      candleSeries.createPriceLine({ price: levels.support, color: PALETTE.candleDown, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true, title: "지지" });
+      candleSeries.createPriceLine({ price: levels.support, color: PALETTE.warning, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true, title: "지지" });
     }
   }
 
