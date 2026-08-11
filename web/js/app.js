@@ -814,6 +814,47 @@ function renderFilingInsight(code) {
   el.innerHTML = `<div class="fi-head">📄 공시 인사이트 <span class="fi-src">${r.report_nm || ""} · AI 요약</span></div>${rows.join("")}`;
 }
 
+function _esc(s) {
+  return String(s == null ? "" : s).replace(/[&<>"]/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[m]));
+}
+
+// 관심도(검색·뉴스 급증) — 워치리스트+팩터TOP은 사전생성(attention.json). 단기 관심 신호 표시.
+function renderAttention(code) {
+  const el = document.getElementById("attention");
+  if (!el) return;
+  const at = state.attention;
+  const s = at && at.status === "ok" && at.signals ? at.signals[code] : null;
+  if (!s) { el.hidden = true; el.innerHTML = ""; return; }
+  el.hidden = false;
+  const lvClass = { hot: "att-hot", up: "att-up", calm: "att-calm" }[s.level] || "att-calm";
+
+  const bits = [];
+  const sr = s.search || {};
+  if (sr.available) {
+    const rt = sr.new_spike ? "신규 급등" : (sr.surge_ratio != null ? `${sr.surge_ratio}배` : "-");
+    bits.push(`검색량 <b>${_esc(rt)}</b> <span class="att-sub">(최근 ${sr.recent_avg} vs 직전 ${sr.prior_avg})</span>`);
+  }
+  const nw = s.news || {};
+  if (nw.recent_count != null) {
+    bits.push(`뉴스 <b>${nw.recent_count}${nw.capped ? "+" : ""}건</b> <span class="att-sub">(최근 ${at.recent_window_days || 7}일)</span>`);
+  }
+  const dc = s.disclosures || {};
+  if (dc.available && dc.recent_count != null) bits.push(`공시 <b>${dc.recent_count}건</b>`);
+
+  const titles = (nw.sample_titles || []).slice(0, 3).map(_esc);
+  const newsLine = titles.length ? `<div class="att-news">📰 ${titles.join(" · ")}</div>` : "";
+  const reasons = (s.reasons || []).join(" · ");
+
+  el.innerHTML =
+    `<div class="att-head">` +
+      `<span class="att-badge ${lvClass}">${s.emoji} ${_esc(s.label)}</span>` +
+      (reasons ? `<span class="att-reasons">${_esc(reasons)}</span>` : "") +
+      `<span class="att-caveat">관심 급등은 단기 신호 · 되돌림 주의 · 매수권유 아님</span>` +
+    `</div>` +
+    (bits.length ? `<div class="att-detail">${bits.join(" · ")}</div>` : "") +
+    newsLine;
+}
+
 function _parseBae(t) { // "19.40배" → 19.40
   if (t == null) return null;
   const n = parseFloat(String(t).replace(/[^0-9.\-]/g, ""));
@@ -1497,6 +1538,7 @@ async function selectStock(code) {
   loadValuationBand(code);     // 밸류에이션 밴드(과거 대비 PER 위치)
   renderSummaryStrip(code);
   renderRevision(code);        // 애널리스트 추정치 리비전(누적되면 표시)
+  renderAttention(code);       // 관심도(검색·뉴스 급증) — 단기 관심 신호
 
   if (state.watchlistCodes.has(code)) {
     // 워치리스트: 사전생성 기술적분석(결정론적 점수 포함) 사용
@@ -1637,6 +1679,7 @@ async function init() {
   try { state.factorRanking = await loadJSON("data/factor_ranking.json"); } catch (e) { state.factorRanking = null; }
   try { state.estimateRevisions = await loadJSON("data/estimate_revisions.json"); } catch (e) { state.estimateRevisions = null; }
   try { state.filingInsights = await loadJSON("data/filing_insights.json"); } catch (e) { state.filingInsights = null; }
+  try { state.attention = await loadJSON("data/attention.json"); } catch (e) { state.attention = null; }
   renderFreshness();
   wireFactorTop();
 
