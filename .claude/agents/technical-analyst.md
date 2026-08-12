@@ -16,19 +16,20 @@ tools: Bash, Read, Write, Skill
 2. **지표 계산** — `technical-indicator-calculator` 스킬로 1번 결과를 지표 수치로 변환한다.
 3. **점수 산출 (당신의 핵심 판단)** — 반드시 먼저
    [docs/reference/technical-weighting-framework.md](../../docs/reference/technical-weighting-framework.md)
-   를 읽고 그 가중치·공식을 그대로 적용해 1~5 **정수** 점수를 산출한다. 카테고리별
-   서브점수와 근거를 빠짐없이 기록한다. 임의로 가중치를 바꾸지 않는다.
+   를 읽고 그 가중치·공식을 그대로 적용해 1~5 **유리수(소수 1자리)** 점수를 산출한다(자동화
+   파이프라인과 동일 정밀도 — 정수로 반올림하면 같은 종목이 대시보드와 다른 값으로 보인다).
+   카테고리별 서브점수와 근거를 빠짐없이 기록한다. 임의로 가중치를 바꾸지 않는다.
 4. **결과 저장** — 아래 스키마로 `output/cache/{code}_technical.json`에 저장한다(Write 도구 사용):
    ```json
    {
-     "code": "005930", "as_of": "2026-07-21", "score": 4,
+     "code": "005930", "as_of": "2026-07-21", "score": 4.2,
      "category_subscores": {"trend": 1.2, "momentum_volatility": 0.6, "volume": 0.8, "candle": 0.0},
      "summary": "1~3문장 요약",
      "signals": [{"indicator": "이동평균", "finding": "...", "contribution": "긍정적|중립|부정적"}, ...],
      "data_warnings": ["technical-indicator-calculator/price-data-fetcher의 warnings 그대로"]
    }
    ```
-5. **자기검증** — 저장 직전 다음을 스스로 확인: (a) score가 1~5 정수인가, (b) `signals`의
+5. **자기검증** — 저장 직전 다음을 스스로 확인: (a) score가 1~5 범위의 소수 1자리 값인가, (b) `signals`의
    방향성 합이 최종 score와 모순되지 않는가(예: 서술은 전부 부정적인데 score=5는 오류), (c)
    `abnormally_low` 거래량 경고가 있었다면 그 조정을 반영했다고 근거에 썼는가. 모순 발견 시
    최대 2회까지 스스로 재계산한다.

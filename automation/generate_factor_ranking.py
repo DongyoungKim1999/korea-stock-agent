@@ -175,6 +175,18 @@ def build_ranking() -> dict:
 
 def main() -> None:
     result = build_ranking()
+
+    # 일시적 실패(유니버스 부족 등)로 기존 정상 랭킹을 에러로 덮어쓰지 않는다 — generate_fundamental_all.py와
+    # 동일한 안전장치. 이 파일은 대시보드 스크리너뿐 아니라 generate_filing_insights/generate_attention의
+    # 우선순위 종목 선정 입력으로도 쓰여, 통째로 에러 상태가 되면 파급 범위가 크다.
+    if result.get("status") != "ok" and OUT_PATH.exists():
+        try:
+            if json.loads(OUT_PATH.read_text(encoding="utf-8")).get("status") == "ok":
+                print(f"[factor-rank] 실패({result.get('reason')}) — 기존 정상 랭킹 유지, 덮어쓰지 않음")
+                return
+        except Exception:
+            pass
+
     OUT_PATH.write_text(json.dumps(result, ensure_ascii=False), encoding="utf-8")
     if result.get("status") == "ok":
         print(f"[factor-rank] 완료: {result['universe']}종목 랭킹 → {OUT_PATH.name}")

@@ -82,9 +82,12 @@ def resolve(query: str) -> dict:
     substring = [row for row in universe if norm_query in _normalize(row["name"])]
     if len(substring) == 1:
         return {"status": "resolved", **substring[0]}
-    if 1 < len(substring) <= 10:
+    if len(substring) > 1:
+        # "삼성", "SK"처럼 10개 넘게 걸리는 흔한 질의도 여기서 처리한다 — 예전엔 10개 초과 시
+        # 이 분기를 그냥 지나쳐 아래 difflib 유사도 폴백으로 넘어갔는데, 부분일치라는 더 확실한
+        # 신호가 있는데도 근사매칭으로 격하되어 정작 찾던 종목이 후보에서 빠지는 경우가 있었다.
         substring.sort(key=lambda r: len(r["name"]))
-        return {"status": "ambiguous", "candidates": substring}
+        return {"status": "ambiguous", "candidates": substring[:10]}
 
     name_map = {row["name"]: row for row in universe}
     close = difflib.get_close_matches(query, name_map.keys(), n=5, cutoff=0.6)

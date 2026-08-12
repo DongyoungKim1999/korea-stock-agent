@@ -39,7 +39,10 @@ function beginnerVerdict(fund, quote) {
   const nis = et.map((r) => _num(r.net_income)).filter((x) => x != null);
   const recent = nis.slice(-3);
   const lossNow = recent.length ? recent[recent.length - 1] <= 0 : (roe != null && roe <= 0);
-  const someLoss = recent.some((x) => x <= 0);
+  // 실적 이력 자체가 없으면(신규상장 등) "손실 없음"이 아니라 "모른다"다 — 초보자 보호가 목적인
+  // 페이지라 데이터 부족을 안심 신호로 착각하면 안 되므로, 이력이 없을 땐 손실이 있는 것처럼
+  // 보수적으로 처리해 🟢 안심 판정에서 제외한다(아래 someLoss 조건).
+  const someLoss = recent.length ? recent.some((x) => x <= 0) : true;
   const warnings = ok ? (fund.warnings || []) : [];
   const perV = (quote && _bae(quote.per)) || (ok && fund.valuation ? _num(fund.valuation.per) : null);
 

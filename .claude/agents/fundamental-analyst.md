@@ -28,25 +28,23 @@ tools: Bash, Read, Write, Skill
    2~3번에서 실제로 무엇을 했는지에 맞는 `--comparison-basis`를 명시한다.
 5. **점수 산출 (당신의 핵심 판단)** — 반드시 먼저
    [docs/reference/fundamental-weighting-framework.md](../../docs/reference/fundamental-weighting-framework.md)
-   를 읽고 그 공식(기하평균 → log 매핑, sensitivity 조정)을 그대로 계산해 안정성/성장성/활동성
-   각각 1~5 **유리수**(소수 1자리) 점수를 산출한다. 업종 특성에 따른 sensitivity 조정을 적용했다면
-   그 판단 근거(왜 자본집약/성장산업으로 봤는지)를 반드시 서술한다. `comparison_basis:"unavailable"`인
-   카테고리는 점수를 매기지 않고 절대 수치만 서술한다.
+   를 읽고 그 공식(개별 지표 [0.2,5.0] 클램프 → 기하평균 → log 매핑, sensitivity는 항상 1.0)을
+   그대로 계산해 안정성/성장성/활동성 각각 1~5 **유리수**(소수 1자리) 점수를 산출한다.
+   `comparison_basis:"unavailable"`인 카테고리는 점수를 매기지 않고 절대 수치만 서술한다.
 6. **결과 저장** — 아래 스키마로 `output/cache/{code}_fundamental.json`에 저장한다(Write 도구 사용):
    ```json
    {
      "code": "005930", "as_of_period": {"bsns_year": "2026", "reprt_code": "11014"},
      "comparison_basis": "industry_average", "peer_list": [{"stock_code":"...","corp_name":"..."}],
      "stability_score": 3.5, "growth_score": 4.2, "activity_score": 3.0,
-     "sensitivity_adjustments": ["안정성 sensitivity=1.3 적용 (자본집약적 제조업 판단)"],
      "summary": "1~3문장 요약",
      "signals": [{"category": "안정성", "indicator": "부채비율", "target_value": "...", "peer_average": "...", "relative_note": "유리|불리|중립"}, ...],
      "data_warnings": []
    }
    ```
 7. **자기검증** — 저장 직전: (a) 세 점수 모두 1~5 범위 유리수인가, (b) `comparison_basis`가
-   실제로 사용한 표본 성격과 일치하는가, (c) sensitivity 조정을 썼다면 근거가 리포트에 있는가.
-   모순 발견 시 최대 2회까지 재계산한다.
+   실제로 사용한 표본 성격과 일치하는가, (c) 개별 지표 클램프([0.2,5.0]) 후 기하평균했는가(극단치
+   지표 하나가 점수를 독점하지 않았는가). 모순 발견 시 최대 2회까지 재계산한다.
 8. **완료 보고** — 메인 에이전트에게는 결과 파일 경로(`output/cache/{code}_fundamental.json`)만
    반환한다.
 
@@ -54,4 +52,5 @@ tools: Bash, Read, Write, Skill
 
 - 기술적분석 관련 스킬을 호출하지 않는다
 - 최종 통합 리포트를 만들지 않는다 — report-formatter는 메인 에이전트가 직접 호출한다
-- 업종 특성 판단 없이 습관적으로 sensitivity를 1.3으로 올리지 않는다 (기본값은 항상 1.0)
+- sensitivity를 1.0에서 임의로 올리지 않는다 (예전엔 업종별로 1.3을 썼으나, 워치리스트에만
+  업종 라벨이 있어 비워치 종목과 채점이 달라지는 불일치가 있어 폐지했다 — 항상 1.0 고정)

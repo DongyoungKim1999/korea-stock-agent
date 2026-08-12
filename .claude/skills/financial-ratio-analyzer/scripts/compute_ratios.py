@@ -187,8 +187,16 @@ def compute_period_ratios(accounts: list[dict]) -> dict:
         # (예: 매출 +23,900%). ±400%p를 넘으면 '측정 불가'(None)로 둬 성장점수·표시를 오염시키지 않는다.
         return g if abs(g) <= 400 else None
 
+    # 자본잠식(자본총계<=0)이면 부채비율(부채/자본*100)의 부호가 뒤집힌다 — 예: 자본 -100억에
+    # 부채 500억이면 계산상 -500%가 되어 "부채가 거의 없다(유리)"로 오독된다(실제론 가장 불리한
+    # 상태). 이 경우 산출하지 않고 None으로 둔다 — 자본잠식 여부는 analyze()가 별도 경고로 표시한다.
+    equity = t["equity"]
+    debt_ratio = None
+    if equity is not None and equity > 0 and t["liabilities"] is not None:
+        debt_ratio = t["liabilities"] / equity * 100
+
     return {
-        "debt_ratio": _safe_div(t["liabilities"], t["equity"]) * 100 if _safe_div(t["liabilities"], t["equity"]) is not None else None,
+        "debt_ratio": debt_ratio,
         "current_ratio": _safe_div(t["current_assets"], t["current_liabilities"]) * 100 if _safe_div(t["current_assets"], t["current_liabilities"]) is not None else None,
         "interest_coverage": _safe_div(t["operating_income"], t["finance_cost"]),
         "revenue_growth_yoy": growth("revenue"),
@@ -394,6 +402,9 @@ def analyze(target_path: str, peer_paths: list[str], comparison_basis: str | Non
 
     peers = []
     warnings = list(target.get("warnings") or [])
+    raw_equity = latest_ratios["_raw"].get("equity")
+    if raw_equity is not None and raw_equity <= 0:
+        warnings.append("자본총계가 0 이하로 자본잠식 상태입니다 — 부채비율 산출 불가, 재무 위험이 매우 높은 상태로 해석해야 합니다.")
     for path in peer_paths:
         peer = _load(path)
         if peer.get("status") != "ok" or not peer.get("periods"):

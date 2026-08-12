@@ -48,14 +48,17 @@ function _stdSeries(arr, p) {
   return out;
 }
 
-// RSI (Wilder). pandas ewm(alpha=1/period, adjust=False, min_periods=period)와 근사.
+// RSI (Wilder). pandas gain.ewm(alpha=1/period, adjust=False, min_periods=period)와 동일하도록 계산.
 function _rsiSeries(close) {
   const n = close.length, out = new Array(n).fill(null);
   if (n < 2) return out;
   const a = 1 / RSI_PERIOD;
   let eg = null, el = null;
-  for (let i = 0; i < n; i++) {
-    const delta = i === 0 ? 0 : close[i] - close[i - 1];
+  // pandas의 close.diff()는 index 0이 NaN이라 ewm이 index 1(첫 실측 변화량)부터 시작하고, 그 첫
+  // 값이 그대로 시드가 된다. 여기서 index 0을 델타=0으로 시드해버리면 초기 수렴값이 달라져서
+  // (신규상장 등으로 데이터가 짧은 종목일수록) pandas 사전생성값과 눈에 띄게 어긋난다.
+  for (let i = 1; i < n; i++) {
+    const delta = close[i] - close[i - 1];
     const gain = Math.max(delta, 0), loss = Math.max(-delta, 0);
     eg = eg == null ? gain : gain * a + eg * (1 - a);
     el = el == null ? loss : loss * a + el * (1 - a);

@@ -23,7 +23,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 
 from common.config import REFERENCE_DIR  # noqa: E402
 
-TECH_EXTREME = {1, 5}
+
+# 기술점수는 정수가 아니라 소수 1자리 유리수다(technical-weighting-framework.md 참고). 예전엔 정수
+# {1,5} 정확히 일치할 때만 극단값으로 봤는데, 소수 점수에서는 그 조건이 raw score가 진짜로 클램프
+# 경계 밖으로 나갔을 때만 겨우 맞아 사실상 거의 안 걸린다. 정수 반올림 시절과 동등한 민감도를
+# 내려면(raw≈4.5~5.5 → round=5, raw≈0.5~1.5 → round=1) 기본적분석과 같은 방식의 구간 검사가 맞다.
+TECH_EXTREME_LOW, TECH_EXTREME_HIGH = 1.5, 4.5
 FUND_EXTREME_LOW, FUND_EXTREME_HIGH = 1.5, 4.5
 
 
@@ -57,7 +62,7 @@ def _tech_label(score) -> str:
 def _compute_review_flag(data: dict) -> tuple[bool, list[str]]:
     reasons = list(data.get("review_flag_reasons") or ([data["review_flag_reason"]] if data.get("review_flag_reason") else []))
     technical_score = (data.get("technical") or {}).get("score")
-    if technical_score in TECH_EXTREME:
+    if technical_score is not None and (technical_score <= TECH_EXTREME_LOW or technical_score >= TECH_EXTREME_HIGH):
         reasons.append(f"기술적분석 점수가 극단값({technical_score}점)")
     fundamental = data.get("fundamental") or {}
     for label, key in (("안정성", "stability_score"), ("성장성", "growth_score"), ("활동성", "activity_score")):

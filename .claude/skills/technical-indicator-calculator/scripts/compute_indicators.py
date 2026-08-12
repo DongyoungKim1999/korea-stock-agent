@@ -139,6 +139,10 @@ def _compute_risk(df: pd.DataFrame) -> dict:
     close = df["close"]
     n = len(close)
     daily_ret = close.pct_change().dropna()
+    # 종가 0(거래정지·관리종목 등 이상치)이 하루라도 있으면 pct_change()가 그 지점에서 inf를 내고,
+    # inf가 하나만 섞여 있어도 std()가 통째로 NaN이 되어 나머지 250여 거래일이 멀쩡해도
+    # 변동성 지표 전체가 None으로 날아간다 — 그 이상치 지점만 골라서 제외한다.
+    daily_ret = daily_ret[np.isfinite(daily_ret)]
 
     annualized_vol = None
     if len(daily_ret) >= 20:

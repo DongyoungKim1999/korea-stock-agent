@@ -30,6 +30,15 @@ PER_CAT = 8            # 카테고리당 최대 종목 수
 MIN_REVENUE_EOK = 2000  # 매출 2천억 미만(소형주)은 변동성 커 제외
 MIN_STABILITY = 3.0    # 재무 최소 '보통 이상'
 
+# "경고 없음" 필터가 봐야 할 건 재무 위험 신호지, "피어 표본이 5개 미만이었다" 같은 비교기준
+# 캐벗까지 전부 실격시키는 건 과하다(우량주도 업종이 특이하면 피어를 못 채워 늘 제외될 수 있음).
+# 초보자 보호가 목적이라 기본은 여전히 "모르면 제외"지만, 알려진 무해한 캐벗 패턴만 예외로 둔다.
+_BENIGN_WARNING_PATTERNS = ("요청", "피어 스킵", "피어 표본", "보고서 기간이 target과 달라")
+
+
+def _has_risk_warning(warnings: list) -> bool:
+    return any(not any(p in w for p in _BENIGN_WARNING_PATTERNS) for w in warnings)
+
 
 def _num(x):
     return x if isinstance(x, (int, float)) and x == x else None
@@ -71,7 +80,7 @@ def _extract(d: dict) -> dict | None:
         return None
     if latest_ni is None or latest_ni <= 0:
         return None
-    if d.get("warnings"):
+    if _has_risk_warning(d.get("warnings") or []):
         return None
     if rev_eok is None or rev_eok < MIN_REVENUE_EOK:
         return None
