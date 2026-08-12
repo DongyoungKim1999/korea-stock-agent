@@ -849,7 +849,6 @@ function renderAttention(code) {
     `<div class="att-head">` +
       `<span class="att-badge ${lvClass}">${s.emoji} ${_esc(s.label)}</span>` +
       (reasons ? `<span class="att-reasons">${_esc(reasons)}</span>` : "") +
-      `<span class="att-caveat">관심 급등은 단기 신호 · 되돌림 주의 · 매수권유 아님</span>` +
     `</div>` +
     (bits.length ? `<div class="att-detail">${bits.join(" · ")}</div>` : "") +
     newsLine;
