@@ -9,3 +9,9 @@ output/cache/**
 !output/cache/.gitkeep
 output/reports/**
 !output/reports/.gitkeep
+
+# wrangler files
+.wrangler
+.dev.vars*
+!.dev.vars.example
+!.env.example
